@@ -78,6 +78,18 @@ describe("VariableContext", () => {
       }
     });
 
+    it("① 原型链穿透拦截：ref({{#n.__proto__}}) 应抛 WorkflowVarError", () => {
+      const ctx = new VariableContext();
+      ctx.set("n", { x: 1 });
+      expect(() => ctx.ref("{{#n.__proto__}}")).toThrow(WorkflowVarError);
+    });
+
+    it("② 原型链穿透拦截：ref({{#n.toString}}) 应抛 WorkflowVarError", () => {
+      const ctx = new VariableContext();
+      ctx.set("n", { x: 1 });
+      expect(() => ctx.ref("{{#n.toString}}")).toThrow(WorkflowVarError);
+    });
+
     it("③ 循环引用检测：两节点互引抛出 WorkflowVarError", () => {
       const ctx = new VariableContext();
       ctx.set("nodeA", { b: "{{#nodeB.x}}" });
@@ -128,6 +140,12 @@ describe("VariableContext", () => {
         "plain text without placeholder",
       );
       expect(ctx.interpolate("value: {{#nodeA.ptr}}!")).toBe("value: ok!");
+    });
+
+    it("③ 尾点占位符在 interpolate 中应抛 WorkflowVarError", () => {
+      const ctx = new VariableContext();
+      ctx.set("a", { x: 1 });
+      expect(() => ctx.interpolate("test {{#a.x.}} end")).toThrow(WorkflowVarError);
     });
   });
 

@@ -7,12 +7,12 @@ export type JsonValue = null | boolean | number | string | JsonValue[] | { [key:
 /**
  * 单占位符正则：完整匹配 "{{#nodeId.prop}}" 或 "{{#nodeId.a.b.c}}"（嵌套路径）
  * 节点 id 必须匹配 ^[a-zA-Z_][a-zA-Z0-9_]*$（表达式变量名安全），
- * prop 路径允许点号分隔的多级访问。
+ * prop 路径收紧为 (?:\w+)(?:\.\w+)*：点号分隔的多级访问，拒绝尾点 / 连续点 / 空段。
  */
-const PLACEHOLDER_RE = /^\{\{\#([a-zA-Z_][a-zA-Z0-9_]*)\.([a-zA-Z_][a-zA-Z0-9_.]*)\}\}$/;
+const PLACEHOLDER_RE = /^\{\{\#([a-zA-Z_][a-zA-Z0-9_]*)\.((?:\w+)(?:\.\w+)*)\}\}$/;
 
-/** 全局匹配版本，用于 interpolate 全量替换 */
-const PLACEHOLDER_GLOBAL_RE = /\{\{\#([a-zA-Z_][a-zA-Z0-9_]*)\.([a-zA-Z_][a-zA-Z0-9_.]*)\}\}/g;
+/** 全局版本：宽松匹配形如 {{#nodeId.path}} 的片段（仅用于定位候选），interpolate 回调内经 parsePlaceholder 严格校验 */
+const PLACEHOLDER_GLOBAL_RE = /\{\{\#([a-zA-Z_][a-zA-Z0-9_]*)\.([a-zA-Z0-9_.]*)\}\}/g;
 
 function isSinglePlaceholder(s: string): boolean {
   return PLACEHOLDER_RE.test(s);
@@ -26,13 +26,14 @@ function parsePlaceholder(
   return { nodeId: m[1], propPath: m[2] };
 }
 
-/** 按点号路径从对象取值 */
+/** 按点号路径从对象取值（每步只走 own property，阻断原型链穿透） */
 function getPath(obj: Record<string, JsonValue>, path: string): JsonValue | undefined {
   const parts = path.split(".");
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let cur: any = obj;
   for (const p of parts) {
     if (cur === null || cur === undefined || typeof cur !== "object") return undefined;
+    if (!Object.hasOwn(cur, p)) return undefined;
     cur = (cur as Record<string, JsonValue>)[p];
   }
   return cur as JsonValue | undefined;
@@ -45,7 +46,7 @@ function hasPath(obj: Record<string, JsonValue>, path: string): boolean {
   let cur: any = obj;
   for (const p of parts) {
     if (cur === null || cur === undefined || typeof cur !== "object") return false;
-    if (!(p in cur)) return false;
+    if (!Object.hasOwn(cur, p)) return false;
     cur = (cur as Record<string, JsonValue>)[p];
   }
   return true;
@@ -115,7 +116,14 @@ export class VariableContext {
       );
     }
 
-    const value = getPath(outputs, propPath)!;
+    const value = getPath(outputs, propPath);
+    // 属性存在但值为 undefined：不是合法 JsonValue，防御性抛错而非走私
+    if (value === undefined) {
+      throw new WorkflowVarError(
+        refStr,
+        `节点 "${nodeId}" 属性 "${propPath}" 的值为 undefined（非法 JsonValue）`,
+      );
+    }
 
     // 链式解析：若值恰为单个占位符则继续递归
     if (typeof value === "string" && isSinglePlaceholder(value)) {
@@ -151,9 +159,12 @@ export class VariableContext {
    * 占位符解析遵循与 ref 相同的链式解析 + 环检测规则。
    */
   interpolate(s: string): string {
-    return s.replace(PLACEHOLDER_GLOBAL_RE, (match, nodeId: string, propPath: string) => {
-      const refStr = `{{#${nodeId}.${propPath}}}`;
-      const value = this.resolveRef(refStr, []);
+    return s.replace(PLACEHOLDER_GLOBAL_RE, (match) => {
+      // 非法路径（尾点 / 连续点 / 空段）在替换前抛错，拒绝走私
+      if (!parsePlaceholder(match)) {
+        throw new WorkflowVarError(match, `非法占位符 "${match}"`);
+      }
+      const value = this.resolveRef(match, []);
       if (typeof value === "string") {
         return value;
       }
