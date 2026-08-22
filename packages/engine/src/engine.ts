@@ -464,10 +464,22 @@ export class WorkflowEngine {
           completedCount++;
           inflight--;
 
-          if (!control.aborted && rec.status === "success") {
-            const succs = outEdges.get(nodeId) ?? [];
-            for (const e of succs) {
-              release(nodeId, e, isEdgeLive(node, outputs[nodeId], e));
+          if (!control.aborted) {
+            if (rec.status === "success") {
+              const succs = outEdges.get(nodeId) ?? [];
+              for (const e of succs) {
+                release(nodeId, e, isEdgeLive(node, outputs[nodeId], e));
+              }
+            } else if (rec.status === "failed") {
+              const onError = (node as { onError?: string }).onError;
+              if (onError === "continue") {
+                // onError "continue": 释放所有出边，下游继续执行（上游未注入变量池，引用失败节点会抛 WorkflowVarError）
+                const succs = outEdges.get(nodeId) ?? [];
+                for (const e of succs) {
+                  release(nodeId, e, true);
+                }
+              }
+              // onError "stop" (默认): 不传播，下游保持 pending
             }
           }
 

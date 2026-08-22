@@ -4,7 +4,7 @@
 - 项目名：dsh-workflow-mode（DSH 工作流模式）
 - 需求文档：[REQUIREMENTS.md](./REQUIREMENTS.md)
 - 架构文档：[ARCHITECTURE.md](./ARCHITECTURE.md)
-- 当前阶段：**T4 进行中（DAG 引擎核心，拆 T4a 调度骨架 / T4b 熔断重试DPE隔离）**
+- 当前阶段：**T4 已完成（DAG 引擎核心：T4a 调度骨架 + T4b 熔断/重试/DPE/快照隔离），T5 待做**
 - v0.1.2：经对抗性审查修订接口契约与任务依赖图
 
 ---
@@ -235,11 +235,15 @@ T1 脚手架 → T2 Schema/校验器 → T3 变量总线 → T4 DAG 引擎核心
 - 变更影响：engine 新增依赖 expr-eval 与 @dsh-workflow/schema；占位符语法裁决为无尾 #（计划已补注）；expr-eval 运算符差异记入契约注；保留字冲突登记 D5
 - 锚点：commit 259d73a → 68c9396（原型链泄漏安全修复+正则收紧+undefined防御）；复审 APPROVED；engine 17/17 + schema 14/14 全绿
 
-### [待办] T4 DAG 引擎核心
-- 依赖：T3
-- 产物：engine/src/engine.ts（graphlib+p-queue）；AbortSignal 熔断；structuredClone ExecutionInstance；DPE 死路径消除令牌传播（SKIPPED 扣减入度/OR-Join）；并发/重试/超时/双运行隔离/fork-join 无死锁单测
-- 验收标准：FR-05 四项验收全过（含 DPE）
-- 关联接口：NodeExecutor 协议、ExecutionContext
+### [已完成] T4 DAG 引擎核心
+> 拆两棒执行。**T4a 已完成**：调度骨架（graphlib+p-queue、Run 级隔离、六态状态机、stop 队列语义、失败传播、maybeFinish 三路完结）——commit 947f033 → d2d72b9，审查修复 S1(stop 后积压任务仍启动)与 B1/B2/B3/B5；23/23 全绿。
+> **T4b 已完成**：AbortSignal 熔断传播、retry/backoff、超时熔断、DPE 死路径消除、structuredClone 图快照——commit b24baff → e9886b8（复审修复：超时同步 aborted 标志 + stopRequested 语义拆分），30/30 全绿。
+
+### [已完成] T4b DAG 引擎核心·第二棒
+- 依赖：T4a
+- 产物：AbortSignal→executor/Worker 传播；retry:{max,backoffMs}；defaultNodeTimeoutMs 超时熔断；DPE SKIPPED 令牌传播（入度扣减/OR-Join/skipped 终态）；run 启动 structuredClone 图快照（文件热改不影响进行中 run）
+- 验收标准：FR-05 四项验收全过（含 DPE fork-join 无死锁）；t4b.spec.ts 六例（超时/默认超时/重试/DPE 双向/快照/stop→abort）全绿
+- 关联接口：NodeExecutor 协议、ExecutionContext；路由节点输出约定 { branch: string }（引擎按 branch 激活 if_else 命中出边）
 
 ### [待办] T5 基础节点执行器（P0 11 种）
 - 依赖：T4
