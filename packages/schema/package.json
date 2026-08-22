@@ -11,5 +11,8 @@
   "devDependencies": {
     "typescript": "^7.0.2",
     "vitest": "^4.1.11"
+  },
+  "dependencies": {
+    "@sinclair/typebox": "^0.34.52"
   }
 }

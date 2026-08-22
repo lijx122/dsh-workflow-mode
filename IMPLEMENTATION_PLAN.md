@@ -4,7 +4,7 @@
 - 项目名：dsh-workflow-mode（DSH 工作流模式）
 - 需求文档：[REQUIREMENTS.md](./REQUIREMENTS.md)
 - 架构文档：[ARCHITECTURE.md](./ARCHITECTURE.md)
-- 当前阶段：**T1 未启动（脚手架）**
+- 当前阶段：**T2 进行中（DSL Schema 与校验器）**
 - v0.1.2：经对抗性审查修订接口契约与任务依赖图
 
 ---
@@ -209,17 +209,21 @@ T1 脚手架 → T2 Schema/校验器 → T3 变量总线 → T4 DAG 引擎核心
 
 ## 任务列表
 
-### [待办] T1 项目脚手架与包结构
+### [已完成] T1 项目脚手架与包结构
 - 依赖：无
 - 产物：packages/dsh-workflow-schema、dsh-workflow-engine、dsh-client-ui-workflow 三包骨架；根 tsconfig/pnpm-workspace
 - 验收标准：`pnpm install && pnpm -r build` 通过，三包均可空构建成功
 - 关联接口：无
+- 变更影响：新增全部骨架文件；实际目录名为 packages/{schema,engine,client-ui-workflow}
+- 锚点：commit 58aced7；Reviewer 双阶段审查 PASS
 
-### [待办] T2 DSL Schema 与校验器
+### [已完成] T2 DSL Schema 与校验器
 - 依赖：T1
-- 产物：packages/dsh-workflow-schema/src/{dsl.ts, validate.ts}；单测 validate.spec.ts
+- 产物：packages/schema/src/{dsl.ts, validate.ts}；单测 validate.spec.ts
 - 验收标准：FR-03 五类错误（缺字段/悬空连线/环路/重名 id/非法 id 字符）用例全绿；错误含 JSON Path
 - 关联接口：WorkflowDSL、WorkflowEdge、validateWorkflow
+- 变更影响：定义 TypeBox DSL Schema 与 validateWorkflow 校验器，覆盖五类错误与多错误累积
+- 锚点：commit 8034234
 
 ### [待办] T3 变量总线与求值双模式
 - 依赖：T2
