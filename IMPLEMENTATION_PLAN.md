@@ -4,7 +4,7 @@
 - 项目名：dsh-workflow-mode（DSH 工作流模式）
 - 需求文档：[REQUIREMENTS.md](./REQUIREMENTS.md)
 - 架构文档：[ARCHITECTURE.md](./ARCHITECTURE.md)
-- 当前阶段：**T2 进行中（DSL Schema 与校验器）**
+- 当前阶段：**T4 进行中（DAG 引擎核心，拆 T4a 调度骨架 / T4b 熔断重试DPE隔离）**
 - v0.1.2：经对抗性审查修订接口契约与任务依赖图
 
 ---
@@ -65,6 +65,8 @@ function validateWorkflow(raw: unknown): ValidateResult;
 ```
 
 ### variable-context → engine（Run 级变量总线，同步 API）
+
+> T3 实现裁决（2026-08-16）：① 占位符语法定为 `{{#nodeId.prop}}`（无尾 #）；② 注入安全策略 = 条件求值经 vars 传值，expr-eval 字符串字面量不支持转义引号，DSL 内避免在表达式中写含引号字面量（比较经变量引用完成）；③ JsonValue 类型由 engine 包定义并导出（null|boolean|number|string|数组|递归对象）。expr-eval 逻辑运算符为 and/or/not（非 &&/||），T5 if_else 执行器须遵守。
 
 ```ts
 /** 每次运行以 runId 独立实例化；并发多运行（Run）互不可见 */
@@ -222,14 +224,16 @@ T1 脚手架 → T2 Schema/校验器 → T3 变量总线 → T4 DAG 引擎核心
 - 产物：packages/schema/src/{dsl.ts, validate.ts}；单测 validate.spec.ts
 - 验收标准：FR-03 五类错误（缺字段/悬空连线/环路/重名 id/非法 id 字符）用例全绿；错误含 JSON Path
 - 关联接口：WorkflowDSL、WorkflowEdge、validateWorkflow
-- 变更影响：定义 TypeBox DSL Schema 与 validateWorkflow 校验器，覆盖五类错误与多错误累积
-- 锚点：commit 8034234
+- 变更影响：定义 TypeBox DSL Schema 与 validateWorkflow 校验器；经质量审查修复环路检测假阳性（S1）与弱断言（S2），附带清理 R3-R7；空白 name 回归已修
+- 锚点：commit 2f123e8 → c8201ce → 901366e；复审 APPROVED；14/14 测试通过
 
-### [待办] T3 变量总线与求值双模式
+### [已完成] T3 变量总线与求值双模式
 - 依赖：T2
-- 产物：engine/src/variable-context.ts；单测覆盖 FR-04 六类用例
+- 产物：engine/src/{variable-context.ts, errors.ts}；单测 variable-context.spec.ts（14 例）
 - 验收标准：FR-04 全部用例通过（含对象保型直传与表达式注入防护）
 - 关联接口：VariableContext（ref/evalExpr/interpolate，同步）
+- 变更影响：engine 新增依赖 expr-eval 与 @dsh-workflow/schema；占位符语法裁决为无尾 #（计划已补注）；expr-eval 运算符差异记入契约注；保留字冲突登记 D5
+- 锚点：commit 259d73a → 68c9396（原型链泄漏安全修复+正则收紧+undefined防御）；复审 APPROVED；engine 17/17 + schema 14/14 全绿
 
 ### [待办] T4 DAG 引擎核心
 - 依赖：T3
