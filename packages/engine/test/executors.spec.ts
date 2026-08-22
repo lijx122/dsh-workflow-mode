@@ -313,6 +313,47 @@ describe("P0 executors (createExecutors)", () => {
       expect(result).toEqual({ result: "undefined" });
     });
 
+    // ===== T5 修复验证：inputs 由 vm realm 重建，constructor 链闭环 =====
+    it("T5①: inputs.constructor.constructor 不可达宿主 process", async () => {
+      const executor = executors.code;
+      const ctx = {
+        signal: new AbortController().signal,
+        nodeId: "t5-inputs-top",
+        runId: "test",
+        log: vi.fn(),
+        varCtx: new VariableContext(),
+        host: {} as any,
+      };
+
+      const result = await executor.execute(
+        { id: "t5-inputs-top", type: "code", code: "return inputs.constructor.constructor('return typeof process')()" } as any,
+        { x: 1 },
+        ctx as any,
+      );
+      // 修1：宿主只传字符串，vm 内 JSON.parse 重建 inputs，constructor 链
+      // 终点是 vm 自己的 Function，process 不可达
+      expect(result).toEqual({ result: "undefined" });
+    });
+
+    it("T5②: 嵌套值 inputs.deep.x.constructor.constructor 同样封死", async () => {
+      const executor = executors.code;
+      const ctx = {
+        signal: new AbortController().signal,
+        nodeId: "t5-inputs-nested",
+        runId: "test",
+        log: vi.fn(),
+        varCtx: new VariableContext(),
+        host: {} as any,
+      };
+
+      const result = await executor.execute(
+        { id: "t5-inputs-nested", type: "code", code: "return inputs.deep.x.constructor.constructor('return typeof process')()" } as any,
+        { deep: { x: 1 } },
+        ctx as any,
+      );
+      expect(result).toEqual({ result: "undefined" });
+    });
+
     it("S1: RegExp.constructor.constructor 不可达宿主 process", async () => {
       const executor = executors.code;
       const ctx = {
@@ -623,3 +664,70 @@ describe("code executor through engine integration", () => {
     expect(result.nodeStates.calc.status).toBe("success");
   });
 });
+
+// ===== T5③: deepFreeze 环防护（修3） =====
+// 真实入参经 JSON 往返必为树形，循环引用无法经 executor 路径构造；
+// 此单测直接以同款实现验证 primordial 脚本中 deepFreeze 的环防护逻辑。
+describe("T5③ deepFreeze cycle guard", () => {
+  it("循环引用对象不再导致深冻结无限递归 RangeError", async () => {
+    const vm = await import("node:vm");
+
+    // 在 vm realm 内构造循环引用对象（自环 + 经数组/嵌套的间接环）
+    const circularSetup = `
+      var a = {};
+      a.self = a;
+      a.list = [a, { inner: a }];
+    `;
+
+    // 负向对照：无 WeakSet 防护的朴素 deepFreeze 在环上必须抛 RangeError
+    // （跨 realm 异常无法 instanceof，按消息断言）
+    const naiveSandbox: any = Object.create(null);
+    vm.createContext(naiveSandbox);
+    expect(() =>
+      vm.runInContext(
+        circularSetup +
+          `
+        (function() {
+          function naiveFreeze(obj) {
+            if (obj === null || typeof obj !== 'object') return;
+            for (var key of Object.getOwnPropertyNames(obj)) {
+              naiveFreeze(obj[key]);
+            }
+            Object.freeze(obj);
+          }
+          naiveFreeze(a);
+        })();
+        `,
+        naiveSandbox,
+      ),
+    ).toThrow(/call stack|recursion/i);
+
+    // 修3：带 WeakSet 已访集合的 deepFreeze 遇环直接跳过，正常冻结完成
+    const safeSandbox: any = Object.create(null);
+    vm.createContext(safeSandbox);
+    const ok = vm.runInContext(
+      circularSetup +
+        `
+      (function() {
+        function deepFreeze(obj, seen) {
+          if (obj === null || (typeof obj !== 'object' && typeof obj !== 'function')) return;
+          if (seen.has(obj)) return;
+          seen.add(obj);
+          for (var key of Object.getOwnPropertyNames(obj)) {
+            var v = obj[key];
+            if (v !== null && (typeof v === 'object' || typeof v === 'function')) {
+              deepFreeze(v, seen);
+            }
+          }
+          Object.freeze(obj);
+        }
+        deepFreeze(a, new WeakSet());
+        return Object.isFrozen(a) && a.self === a && Object.isFrozen(a.list[1].inner);
+      })()
+      `,
+      safeSandbox,
+    );
+    expect(ok).toBe(true);
+  });
+});
+
