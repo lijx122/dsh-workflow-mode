@@ -8,11 +8,10 @@ import {
   NodeType,
   ValidateResult,
 } from "@dsh-workflow/schema";
-import { VariableContext } from "./variable-context.js";
+import { VariableContext, type JsonValue } from "./variable-context.js";
 
 // ================= 共享类型（契约对齐） =================
 
-export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
 export interface NodeOutput {
   [key: string]: JsonValue;
@@ -194,7 +193,10 @@ export class WorkflowEngine {
     const outputs: Record<string, NodeOutput> = {};
     const events: RunEvent[] = [];
     const varCtx = new VariableContext();
-    varCtx.set("start", inputs);
+    const startNode = dsl.nodes.find((n) => n.type === "start");
+    if (startNode) {
+      varCtx.set(startNode.id, inputs);
+    }
 
     // ---- 调度器 ----
     const queue = new PQueue({ concurrency: this.maxParallelNodes });
@@ -237,7 +239,7 @@ export class WorkflowEngine {
       nodeId,
       signal: controller.signal,
       log: (ev: RunEvent) => {
-        events.push(ev);
+        events.push({ ...ev, runId, timestamp: Date.now() });
       },
       varCtx,
       host: this.host,
@@ -248,57 +250,66 @@ export class WorkflowEngine {
       inflight++;
 
       queue.add(async () => {
+        // S1: stop() 后积压在 p-queue 的任务不得再进入 running
+        if (control.aborted) {
+          inflight--;
+          maybeFinish();
+          return;
+        }
+
         const node = nodes.get(nodeId)!;
         const rec = nodeStates[nodeId];
 
-        rec.status = "running";
-        rec.startedAt = Date.now();
-        emit("node_start", nodeId);
-
         try {
-          const executor = this.executors[node.type];
-          if (!executor) {
-            throw new Error(
-              `No executor registered for node type "${node.type}" (node "${nodeId}")`,
+          rec.status = "running";
+          rec.startedAt = Date.now();
+          emit("node_start", nodeId);
+
+          try {
+            const executor = this.executors[node.type];
+            if (!executor) {
+              throw new Error(
+                `No executor registered for node type "${node.type}" (node "${nodeId}")`,
+              );
+            }
+
+            // start 节点（工作流入口）注入运行输入；其余节点按声明 inputs 解析
+            const nodeInputs = node.type === "start" ? { ...inputs } : resolveNodeInputs(node);
+            const output = await executor.execute(
+              node,
+              nodeInputs,
+              makeCtx(nodeId),
             );
+
+            rec.status = "success";
+            rec.finishedAt = Date.now();
+            outputs[nodeId] = output;
+            varCtx.set(nodeId, output);
+            emit("node_finish", nodeId);
+          } catch (e) {
+            rec.status = "failed";
+            rec.finishedAt = Date.now();
+            rec.error = e instanceof Error ? e.message : String(e);
+            emit("node_error", nodeId, { error: rec.error });
           }
+        } finally {
+          // B5: 收尾逻辑（计数/后继释放/完结判定）包 try/finally 防泄漏
+          completedCount++;
+          inflight--;
 
-          // start 节点（工作流入口）注入运行输入；其余节点按声明 inputs 解析
-          const nodeInputs = node.type === "start" ? { ...inputs } : resolveNodeInputs(node);
-          const output = await executor.execute(
-            node,
-            nodeInputs,
-            makeCtx(nodeId),
-          );
-
-          rec.status = "success";
-          rec.finishedAt = Date.now();
-          outputs[nodeId] = output;
-          varCtx.set(nodeId, output);
-          emit("node_finish", nodeId);
-        } catch (e) {
-          rec.status = "failed";
-          rec.finishedAt = Date.now();
-          rec.error = e instanceof Error ? e.message : String(e);
-          emit("node_error", nodeId, { error: rec.error });
-        }
-
-        completedCount++;
-        inflight--;
-
-        // 释放后继节点（仅当前节点成功时）
-        if (rec.status === "success" && !control.aborted) {
-          const succs = graph.successors(nodeId) ?? [];
-          for (const succ of succs) {
-            const d = (inDegree.get(succ) ?? 1) - 1;
-            inDegree.set(succ, d);
-            if (d === 0) {
-              dispatch(succ);
+          if (rec.status === "success" && !control.aborted) {
+            const succs = graph.successors(nodeId) ?? [];
+            for (const succ of succs) {
+              const d = (inDegree.get(succ) ?? 1) - 1;
+              inDegree.set(succ, d);
+              if (d === 0) {
+                dispatch(succ);
+              }
             }
           }
-        }
 
-        maybeFinish();
+          maybeFinish();
+        }
       });
     };
 

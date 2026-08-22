@@ -280,4 +280,81 @@ describe("WorkflowEngine", () => {
     // 重复 stop 同一 runId 返回 false（run 已结束并清理）
     expect(engine.stop(result.runId)).toBe(false);
   });
+
+  it("⑥ 宽扇出图（1 start 派发 5 子节点，maxParallelNodes=2）启动后立即 stop：积压队列任务不再进入 running", async () => {
+    const workflow = dsl(
+      [
+        { id: "start", type: "start" },
+        { id: "a", type: "code", code: "a" },
+        { id: "b", type: "code", code: "b" },
+        { id: "c", type: "code", code: "c" },
+        { id: "d", type: "code", code: "d" },
+        { id: "e", type: "code", code: "e" },
+        { id: "end", type: "end" },
+      ],
+      [
+        { id: "e1", source: "start", target: "a" },
+        { id: "e2", source: "start", target: "b" },
+        { id: "e3", source: "start", target: "c" },
+        { id: "e4", source: "start", target: "d" },
+        { id: "e5", source: "start", target: "e" },
+        { id: "e6", source: "a", target: "end" },
+        { id: "e7", source: "b", target: "end" },
+        { id: "e8", source: "c", target: "end" },
+        { id: "e9", source: "d", target: "end" },
+        { id: "e10", source: "e", target: "end" },
+      ],
+    );
+
+    let stopResult: boolean | null = null;
+    let engine!: Engine;
+
+    engine = new Engine(
+      stubExecutors({
+        start: { type: "start", execute: async (_n, i) => ({ ...i }) },
+        code: {
+          type: "code",
+          execute: async (_n, _i, ctx) => {
+            // 首个运行中的子节点立即 stop（此时其余子节点已积压在 p-queue 队列中）
+            if (stopResult === null) {
+              stopResult = engine.stop(ctx.runId);
+            }
+            return { ok: true };
+          },
+        },
+        end: { type: "end", execute: async () => ({ done: true }) },
+      }),
+      { maxParallelNodes: 2 },
+    );
+
+    const result = await engine.run(workflow, {});
+
+    // stop 已被调用且返回 true
+    expect(stopResult).toBe(true);
+    expect(result.status).toBe("stopped");
+
+    // start 本身已在 running，停止后完成自己
+    expect(result.nodeStates.start.status).toBe("success");
+    expect(result.nodeStates.start.finishedAt).toBeDefined();
+
+    // 首个运行中的子节点 a（dispatch 顺序最先进入 running）完成自己
+    expect(result.nodeStates.a.status).toBe("success");
+    expect(result.nodeStates.a.finishedAt).toBeDefined();
+
+    // stop 后其余 4 个子节点（b/c/d/e）不得再进入 running：保持 pending、无 startedAt
+    for (const id of ["b", "c", "d", "e"]) {
+      expect(result.nodeStates[id].status).toBe("pending");
+      expect(result.nodeStates[id].startedAt).toBeUndefined();
+    }
+
+    // end 未被释放，保持 pending
+    expect(result.nodeStates.end.status).toBe("pending");
+    expect(result.nodeStates.end.startedAt).toBeUndefined();
+
+    // 事件：仅有 start 与 a 产生 node_start，b/c/d/e/end 均无
+    const startEventIds = result.events
+      .filter((ev) => ev.type === "node_start")
+      .map((ev) => ev.nodeId);
+    expect(startEventIds).toEqual(["start", "a"]);
+  });
 });
