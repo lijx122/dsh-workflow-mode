@@ -383,7 +383,7 @@ export type WorkflowEdge = Static<typeof WorkflowEdgeSchema>;
 
 export const WorkflowDSLSchema = Type.Object({
   version: Type.Literal("dsh.workflow.v1"),
-  name: Type.String({ minLength: 1 }),
+  name: Type.String({ minLength: 1, pattern: "\\S" }),
   nodes: Type.Array(WorkflowNodeSchema),
   edges: Type.Array(WorkflowEdgeSchema),
 });

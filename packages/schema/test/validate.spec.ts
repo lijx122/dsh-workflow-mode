@@ -44,6 +44,19 @@ describe("validateWorkflow", () => {
     expect(paths).toContain("edges");
   });
 
+  it("name 为纯空格字符串 → SCHEMA 错误且 path === \"name\" (T2)", () => {
+    const dsl = {
+      version: "dsh.workflow.v1",
+      name: "   ",
+      nodes: [],
+      edges: [],
+    };
+
+    const res = validateWorkflow(dsl);
+    expect(res.ok).toBe(false);
+    expect(res.errors.some((e) => e.code === "SCHEMA" && e.path === "name")).toBe(true);
+  });
+
   it("节点缺专有必填字段 → SCHEMA 错误且 path 精确到字段 (S2)", () => {
     const dsl = {
       version: "dsh.workflow.v1",
