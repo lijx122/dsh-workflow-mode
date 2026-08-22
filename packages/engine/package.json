@@ -11,5 +11,9 @@
   "devDependencies": {
     "typescript": "^7.0.2",
     "vitest": "^4.1.11"
+  },
+  "dependencies": {
+    "expr-eval": "^2.0.2",
+    "@dsh-workflow/schema": "workspace:*"
   }
 }
