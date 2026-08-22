@@ -1,0 +1,13 @@
+{
+  "name": "@dsh-workflow/client-ui-workflow",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./lib/index.js",
+  "types": "./lib/index.d.ts",
+  "scripts": {
+    "build": "tsc"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2"
+  }
+}
