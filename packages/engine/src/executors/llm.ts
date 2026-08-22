@@ -35,12 +35,19 @@ export const llmExecutor: NodeExecutor = {
       ? ctx.varCtx.interpolate(node.systemPrompt)
       : undefined;
 
-    const { text } = await llm.complete({
-      model: node.model,
-      prompt,
-      systemPrompt,
-      outputSchema: node.outputSchema,
-    });
+    let text: string;
+    try {
+      ({ text } = await llm.complete({
+        model: node.model,
+        prompt,
+        systemPrompt,
+        outputSchema: node.outputSchema,
+      }));
+    } catch (e: unknown) {
+      // 非 Error reject（如模型层丢出原始 string/对象）归一化，保证节点失败信息可读
+      if (e instanceof Error) throw e;
+      throw new Error(`llm node "${ctx.nodeId}": ${String(e)}`);
+    }
 
     let result: JsonValue;
     if (node.outputSchema !== undefined && node.outputSchema !== null) {
@@ -91,7 +98,12 @@ function validateJsonSchema(
       actualType === "number" && Number.isInteger(value as number)
         ? "integer"
         : actualType;
-    if (!types.includes(normalized)) {
+    // 整型是 number 的子集：schema 写 "number" 而模型返回整数时放行，
+    // 避免"期望 number 实际 number"的自相矛盾误拒
+    const typeOk =
+      types.includes(normalized) ||
+      (normalized === "integer" && types.includes("number"));
+    if (!typeOk) {
       throw schemaError(
         nodeId,
         path,

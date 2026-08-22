@@ -43,8 +43,9 @@ export const humanExecutor: NodeExecutor = {
     const askPromise = askUser({ prompt, inputs: inputsSnapshot });
 
     // run stop / 熔断传播：signal abort 即拒绝，human 等待不悬挂
+    let onAbort: (() => void) | undefined;
     const signalPromise = new Promise<never>((_, reject) => {
-      const onAbort = () =>
+      onAbort = () =>
         reject(
           new Error(`human node "${ctx.nodeId}" aborted by run signal`),
         );
@@ -56,10 +57,13 @@ export const humanExecutor: NodeExecutor = {
     });
 
     // 超时竞争者：one-shot timer，mode=proceed 时 resolve {decision:"proceed"}，abort 时 reject
+    // timer 句柄挂外层，race 无论谁赢都在 finally 无脑清理——askUser 悬挂时
+    // abort/proceed 赢出 race，若不清理 pending setTimeout 会钉住事件循环直到 timeoutMs
+    let timer: ReturnType<typeof setTimeout> | undefined;
     const timeoutPromise =
       timeoutMs > 0
         ? new Promise<{ decision: string }>((resolve, reject) => {
-            const timer = setTimeout(() => {
+            timer = setTimeout(() => {
               if (onTimeout === "proceed") {
                 resolve({ decision: "proceed" });
               } else {
@@ -70,11 +74,6 @@ export const humanExecutor: NodeExecutor = {
                 );
               }
             }, timeoutMs);
-            // askUser 先完成则清掉 timer，防止泄漏；one-shot 语义下此分支仅防御性
-            askPromise.then(
-              () => clearTimeout(timer),
-              () => clearTimeout(timer),
-            );
           })
         : null;
 
@@ -89,6 +88,10 @@ export const humanExecutor: NodeExecutor = {
     } catch (e: unknown) {
       if (e instanceof Error) throw e;
       throw new Error(String(e));
+    } finally {
+      // race 尘埃落定即清理：timer 不再需要（防事件循环钉住），abort listener 用完即撤
+      if (timer !== undefined) clearTimeout(timer);
+      if (onAbort) ctx.signal.removeEventListener("abort", onAbort);
     }
 
     if (outcome.decision === "rejected") {
@@ -96,14 +99,17 @@ export const humanExecutor: NodeExecutor = {
     }
 
     // 合并回写：outcome.inputs 非空时合并进节点输出（varCtx 记录即节点输出，
-    // 引擎在成功后 varCtx.set(nodeId, output)——见 engine.dispatch 的 "success" 分支）
-    const mergedOutput: NodeOutput = { decision: outcome.decision };
+    // 引擎在成功后 varCtx.set(nodeId, output)——见 engine.dispatch 的 "success" 分支）。
+    // 先铺用户 inputs、最后写 decision：decision 是协议字段（权威），
+    // 用户提交名为 decision 的审批字段不得覆盖协议值
+    const mergedOutput: NodeOutput = {};
     if (outcome.inputs && typeof outcome.inputs === "object") {
       for (const [k, v] of Object.entries(outcome.inputs)) {
         mergedOutput[k] = v as NodeOutput[string];
       }
       mergedOutput.inputs = outcome.inputs as Record<string, NodeOutput[string]>;
     }
+    mergedOutput.decision = outcome.decision;
 
     return mergedOutput;
   },

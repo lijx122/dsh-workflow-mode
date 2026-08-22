@@ -215,6 +215,30 @@ describe("llm executor · T6 host binding", () => {
       ),
     ).rejects.toThrow(/outputSchema 校验失败于 \$\.tags\[1\]/);
   });
+
+  it("⑨ type:number 遇整数放行：schema 写 \"number\"，模型返回整数 → 不误拒", async () => {
+    const complete = vi
+      .fn()
+      .mockResolvedValue({ text: '{"score":3}' });
+    const executor = createExecutors().llm;
+    const ctx = mockCtx({ llm: { complete } });
+
+    const out = await executor.execute(
+      {
+        id: "n1",
+        type: "llm",
+        prompt: "get score",
+        outputSchema: {
+          type: "object",
+          properties: { score: { type: "number" } },
+        },
+      } as never,
+      {},
+      ctx as never,
+    );
+
+    expect(out).toEqual({ result: { score: 3 } });
+  });
 });
 
 // ================= subagent =================
@@ -509,6 +533,65 @@ describe("human executor · T6 host binding（三路径）", () => {
         ctx as never,
       ),
     ).rejects.toThrow(/host service "askUser" not bound/);
+  });
+
+  it("⑥ timer 泄漏回归：signal abort 后 pending setTimeout 被清理，不钉住事件循环", async () => {
+    vi.useFakeTimers();
+    try {
+      // askUser 永不 settle，timeoutMs 设很大（不会触发），signal abort 赢出 race
+      const askUser = vi.fn().mockImplementation(() => new Promise(() => {}));
+      const executor = createExecutors().human;
+      const ac = new AbortController();
+      const ctx = {
+        runId: "run-1",
+        nodeId: "n1",
+        signal: ac.signal,
+        log: vi.fn(),
+        varCtx: new VariableContext(),
+        host: { askUser },
+      };
+
+      const runPromise = executor.execute(
+        {
+          id: "n1",
+          type: "human",
+          prompt: "Approve?",
+          timeoutMs: 50_000,
+        } as never,
+        {},
+        ctx as never,
+      );
+      ac.abort();
+
+      await expect(runPromise).rejects.toThrow(/aborted by run signal/);
+      // 断言：pending 定时器已清理，不再占用事件循环
+      // vitest 4.x getTimerCount 返回当前未执行的定时器数
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("⑦ decision 权威：用户提交名为 decision 的审批字段不覆盖协议字段", async () => {
+    // askUser 返回 inputs 含 decision 字段，但协议字段应保持权威
+    const askUser = vi
+      .fn()
+      .mockResolvedValue({ decision: "approved", inputs: { decision: "user-forged", note: "ok" } });
+    const executor = createExecutors().human;
+    const ctx = mockCtx({ askUser });
+
+    const out = await executor.execute(
+      { id: "n1", type: "human", prompt: "Approve?" } as never,
+      {},
+      ctx as never,
+    );
+
+    // 协议字段保持权威
+    expect(out.decision).toBe("approved");
+    // 用户 inputs 仍正确合并
+    expect(out.note).toBe("ok");
+    // 用户 inputs 的整体也保留
+    expect(out.inputs).toEqual({ decision: "user-forged", note: "ok" });
   });
 });
 
