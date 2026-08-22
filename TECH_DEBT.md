@@ -8,6 +8,7 @@
 | D1 | 设计评审 | code 节点每次冷启动 Worker 线程，高频小任务延迟与开销偏大；未做线程池预热 | 中 | T5 完成后压测，若 P95 超 200ms 则引入常驻 worker 池 | 待处理 | - |
 | D2 | 设计评审 | Windows 下 chokidar 对原子写（临时文件 rename）可能触发双事件/抖动；debounce 300ms 是缓解而非根治 | 中 | T12 实现时加内容哈希去重校验 | 待处理 | - |
 | D3 | 设计评审 | schedule_trigger 复用 cordis-plugin-timer，调度存活于进程/GUI 会话——浏览器标签页关闭或进程退出则错过即跳过（同 dsh-task-board 既有限制） | 高 | v0.2 演进：迁移至 host 常驻调度或落盘补偿队列 | 待处理 | - |
+| D4 | T2 审查 | iteration.body 嵌套子图（nodes/edges 结构）递归校验延后至 T5/T10，当前仅做宽松 Type.Any 类型校验 | 中 | T5 或 T10 实现时补齐 | 待处理 | - |
 
 ## 登记规则
 

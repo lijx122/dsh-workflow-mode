@@ -1,4 +1,4 @@
-import { Type, Static, TSchema } from "@sinclair/typebox";
+import { Type, Static } from "@sinclair/typebox";
 
 /**
  * 节点 ID 正则表达式与模式字符串
@@ -86,7 +86,7 @@ export type OnError = Static<typeof OnErrorSchema>;
  * 重试配置
  */
 export const RetryConfigSchema = Type.Union([
-  Type.Number(),
+  Type.Number({ minimum: 0 }),
   Type.Object({
     max: Type.Optional(Type.Number({ minimum: 0 })),
     maxAttempts: Type.Optional(Type.Number({ minimum: 0 })),
@@ -155,6 +155,7 @@ export const IterationNodeSchema = Type.Object({
   over: Type.String(),
   maxIterations: Type.Optional(Type.Number({ minimum: 1, maximum: 500 })),
   maxConcurrency: Type.Optional(Type.Number({ minimum: 1 })),
+  // body 嵌套子图（nodes/edges 结构）仅作宽松校验，递归校验延后至 T5/T10，已登记技术债 D4
   body: Type.Optional(
     Type.Union([
       Type.Array(Type.Any()),
@@ -382,7 +383,7 @@ export type WorkflowEdge = Static<typeof WorkflowEdgeSchema>;
 
 export const WorkflowDSLSchema = Type.Object({
   version: Type.Literal("dsh.workflow.v1"),
-  name: Type.String(),
+  name: Type.String({ minLength: 1 }),
   nodes: Type.Array(WorkflowNodeSchema),
   edges: Type.Array(WorkflowEdgeSchema),
 });

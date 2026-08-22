@@ -1,9 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { validateWorkflow, WorkflowDSL } from "../src/index.js";
+import { validateWorkflow } from "../src/index.js";
 
 describe("validateWorkflow", () => {
   it("合法最小图（start→end）validate 通过 ok:true", () => {
-    const dsl: WorkflowDSL = {
+    const dsl = {
       version: "dsh.workflow.v1",
       name: "minimal_flow",
       nodes: [
@@ -44,15 +44,15 @@ describe("validateWorkflow", () => {
     expect(paths).toContain("edges");
   });
 
-  it("节点缺专有必填字段（如 if_else 缺 condition，human 缺 prompt） → SCHEMA 错误且 path 可定位", () => {
+  it("节点缺专有必填字段 → SCHEMA 错误且 path 精确到字段 (S2)", () => {
     const dsl = {
       version: "dsh.workflow.v1",
       name: "missing_fields_flow",
       nodes: [
-        { id: "node1", type: "if_else" }, // missing condition
-        { id: "node2", type: "human" }, // missing prompt
-        { id: "node3", type: "code" }, // missing code
-        { id: "node4", type: "set_variable" }, // missing assignments
+        { id: "node1", type: "if_else" },       // missing condition
+        { id: "node2", type: "human" },         // missing prompt
+        { id: "node3", type: "code" },          // missing code
+        { id: "node4", type: "set_variable" },  // missing assignments
       ],
       edges: [],
     };
@@ -61,10 +61,12 @@ describe("validateWorkflow", () => {
     expect(res.ok).toBe(false);
 
     const schemaErrors = res.errors.filter((e) => e.code === "SCHEMA");
-    expect(schemaErrors.some((e) => e.path.startsWith("nodes[0]"))).toBe(true);
-    expect(schemaErrors.some((e) => e.path.startsWith("nodes[1]"))).toBe(true);
-    expect(schemaErrors.some((e) => e.path.startsWith("nodes[2]"))).toBe(true);
-    expect(schemaErrors.some((e) => e.path.startsWith("nodes[3]"))).toBe(true);
+    const pick = (i: number) => schemaErrors.filter((e) => e.path.startsWith(`nodes[${i}]`)).map((e) => e.path);
+
+    expect(pick(0)).toContain("nodes[0].condition");
+    expect(pick(1)).toContain("nodes[1].prompt");
+    expect(pick(2)).toContain("nodes[2].code");
+    expect(pick(3)).toContain("nodes[3].assignments");
   });
 
   it("悬空连线 → DANGLING_EDGE 且精确标明 source 或 target", () => {
@@ -97,7 +99,7 @@ describe("validateWorkflow", () => {
     expect(danglingErrors[1].path).toBe("edges[1].target");
   });
 
-  it("两节点互相成环 → CYCLE 错误", () => {
+  it("两节点互相成环 → CYCLE 错误, 精确环路径与闭合边 (S2/R5)", () => {
     const dsl = {
       version: "dsh.workflow.v1",
       name: "cycle_flow",
@@ -114,9 +116,9 @@ describe("validateWorkflow", () => {
     const res = validateWorkflow(dsl);
     expect(res.ok).toBe(false);
     const cycleErrors = res.errors.filter((e) => e.code === "CYCLE");
-    expect(cycleErrors.length).toBeGreaterThanOrEqual(1);
-    expect(cycleErrors[0].message).toContain("node_a");
-    expect(cycleErrors[0].message).toContain("node_b");
+    expect(cycleErrors).toHaveLength(1);
+    expect(cycleErrors[0].path).toBe("edges[1]");
+    expect(cycleErrors[0].message).toBe("Workflow contains a cycle: node_a -> node_b -> node_a");
   });
 
   it("重名 id → DUPLICATE_NODE_ID；非法 id（如 'git-clone'）→ INVALID_NODE_ID", () => {
@@ -162,14 +164,14 @@ describe("validateWorkflow", () => {
     expect(unknownErrors[0].message).toContain("some_unregistered_custom_type");
   });
 
-  it("多错误累积返回（不遇错即停）", () => {
+  it("多错误累积返回（不遇错即停）且 path 精确到字段 (S2)", () => {
     const dsl = {
       version: "dsh.workflow.v1",
       name: "multi_error_flow",
       nodes: [
         { id: "bad-id-1", type: "unknown_node" }, // INVALID_NODE_ID + UNKNOWN_NODE_TYPE
-        { id: "node_2", type: "if_else" }, // SCHEMA (missing condition)
-        { id: "node_2", type: "human" }, // DUPLICATE_NODE_ID + SCHEMA (missing prompt)
+        { id: "node_2", type: "if_else" },       // SCHEMA (missing condition)
+        { id: "node_2", type: "human" },         // DUPLICATE_NODE_ID + SCHEMA (missing prompt)
       ],
       edges: [
         { id: "e1", source: "bad-id-1", target: "ghost_node" }, // DANGLING_EDGE
@@ -185,5 +187,113 @@ describe("validateWorkflow", () => {
     expect(codes.has("SCHEMA")).toBe(true);
     expect(codes.has("DUPLICATE_NODE_ID")).toBe(true);
     expect(codes.has("DANGLING_EDGE")).toBe(true);
+
+    // 精确断言每类错误的首个生效路径 (S2)
+    expect(res.errors).toEqual(expect.arrayContaining([
+      expect.objectContaining({ path: "nodes[0].id", code: "INVALID_NODE_ID" }),
+      expect.objectContaining({ path: "nodes[0].type", code: "UNKNOWN_NODE_TYPE" }),
+      expect.objectContaining({ path: "nodes[1].condition", code: "SCHEMA" }),
+      expect.objectContaining({ path: "nodes[2].id", code: "DUPLICATE_NODE_ID" }),
+      expect.objectContaining({ path: "edges[0].target", code: "DANGLING_EDGE" }),
+    ]));
+  });
+
+  it("自环 A→A → CYCLE 且完整环路径 (S2)", () => {
+    const dsl = {
+      version: "dsh.workflow.v1",
+      name: "self_loop_flow",
+      nodes: [
+        { id: "node_a", type: "code", code: "return 1;" },
+      ],
+      edges: [
+        { id: "e1", source: "node_a", target: "node_a" },
+      ],
+    };
+
+    const res = validateWorkflow(dsl);
+    expect(res.ok).toBe(false);
+    const cycleErrors = res.errors.filter((e) => e.code === "CYCLE");
+    expect(cycleErrors).toHaveLength(1);
+    expect(cycleErrors[0].path).toBe("edges[0]");
+    expect(cycleErrors[0].message).toBe("Workflow contains a cycle: node_a -> node_a");
+  });
+
+  it("同分量双环并存 → 两个 CYCLE 全部报告且无假环 (S1/S2)", () => {
+    const dsl = {
+      version: "dsh.workflow.v1",
+      name: "dual_cycle_flow",
+      nodes: [
+        { id: "node_a", type: "code", code: "return 1;" },
+        { id: "node_b", type: "code", code: "return 2;" },
+        { id: "node_c", type: "code", code: "return 3;" },
+      ],
+      edges: [
+        { id: "e1", source: "node_a", target: "node_b" },
+        { id: "e2", source: "node_b", target: "node_a" },
+        { id: "e3", source: "node_a", target: "node_c" },
+        { id: "e4", source: "node_c", target: "node_a" },
+      ],
+    };
+
+    const res = validateWorkflow(dsl);
+    expect(res.ok).toBe(false);
+    const cycleErrors = res.errors.filter((e) => e.code === "CYCLE");
+    expect(cycleErrors).toHaveLength(2);
+    expect(cycleErrors.map((e) => e.path).sort()).toEqual(["edges[1]", "edges[3]"]);
+    expect(cycleErrors.map((e) => e.message).sort()).toEqual([
+      "Workflow contains a cycle: node_a -> node_b -> node_a",
+      "Workflow contains a cycle: node_a -> node_c -> node_a",
+    ]);
+  });
+
+  it("嵌套数组路径与 JSON Pointer 转义 (assignments[0].key / inputs.a/b.type) (R4/S2)", () => {
+    const dsl = {
+      version: "dsh.workflow.v1",
+      name: "nested_path_flow",
+      nodes: [
+        { id: "sv_node", type: "set_variable", assignments: [{ value: "return 1;" }] },              // 缺 key
+        { id: "st_node", type: "start", inputs: { "a/b": { type: "not_a_valid_input_type" } } },     // 非法 input type, key 含 "/"
+      ],
+      edges: [],
+    };
+
+    const res = validateWorkflow(dsl);
+    expect(res.ok).toBe(false);
+    const schemaErrors = res.errors.filter((e) => e.code === "SCHEMA");
+    expect(schemaErrors.some((e) => e.path === "nodes[0].assignments[0].key")).toBe(true);
+    expect(schemaErrors.some((e) => e.path === "nodes[1].inputs.a/b.type")).toBe(true);
+  });
+
+  it("id 缺失 → 仅报一次 INVALID_NODE_ID，不重复报 SCHEMA /id (R6)", () => {
+    const dsl = {
+      version: "dsh.workflow.v1",
+      name: "missing_id_flow",
+      nodes: [
+        { id: "ok_start", type: "start" },
+        { type: "end" }, // 缺 id
+      ],
+      edges: [],
+    };
+
+    const res = validateWorkflow(dsl);
+    expect(res.ok).toBe(false);
+    const idErrors = res.errors.filter((e) => e.path === "nodes[1].id");
+    expect(idErrors).toHaveLength(1);
+    expect(idErrors[0].code).toBe("INVALID_NODE_ID");
+  });
+
+  it("retry 负数 → SCHEMA（RetryConfig 数字分支 minimum:0）(R7)", () => {
+    const dsl = {
+      version: "dsh.workflow.v1",
+      name: "retry_negative_flow",
+      nodes: [
+        { id: "llm1", type: "llm", prompt: "hello", retry: -1 },
+      ],
+      edges: [],
+    };
+
+    const res = validateWorkflow(dsl);
+    expect(res.ok).toBe(false);
+    expect(res.errors.some((e) => e.code === "SCHEMA" && e.path === "nodes[0].retry")).toBe(true);
   });
 });
