@@ -253,6 +253,85 @@ describe("P0 executors (createExecutors)", () => {
       expect(result).toEqual({ result: "undefined" });
     });
 
+    // ===== S1 沙箱逃逸探针：constructor 链不可达宿主 process =====
+    it("S1: Date.constructor.constructor 不可达宿主 process", async () => {
+      const executor = executors.code;
+      const ctx = {
+        signal: new AbortController().signal,
+        nodeId: "s1-date",
+        runId: "test",
+        log: vi.fn(),
+        varCtx: new VariableContext(),
+        host: {} as any,
+      };
+
+      const result = await executor.execute(
+        { id: "s1-date", type: "code", code: "return Date.constructor.constructor('return typeof process')()" } as any,
+        {},
+        ctx as any,
+      );
+      expect(result).toEqual({ result: "undefined" });
+    });
+
+    it("S1: Math.constructor.constructor 不可达宿主 process", async () => {
+      const executor = executors.code;
+      const ctx = {
+        signal: new AbortController().signal,
+        nodeId: "s1-math",
+        runId: "test",
+        log: vi.fn(),
+        varCtx: new VariableContext(),
+        host: {} as any,
+      };
+
+      const result = await executor.execute(
+        { id: "s1-math", type: "code", code: "return Math.constructor.constructor('return typeof process')()" } as any,
+        {},
+        ctx as any,
+      );
+      expect(result).toEqual({ result: "undefined" });
+    });
+
+    it("S1: inputs.x.constructor.constructor 不可达宿主 process", async () => {
+      const executor = executors.code;
+      const ctx = {
+        signal: new AbortController().signal,
+        nodeId: "s1-inputs",
+        runId: "test",
+        log: vi.fn(),
+        varCtx: new VariableContext(),
+        host: {} as any,
+      };
+
+      const result = await executor.execute(
+        { id: "s1-inputs", type: "code", code: "return inputs.x.constructor.constructor('return typeof process')()" } as any,
+        { x: 1 },
+        ctx as any,
+      );
+      // inputs.x 是纯数据（JSON 往返），.constructor.constructor 是 vm 的 Function，
+      // 在其中 process 应为 undefined
+      expect(result).toEqual({ result: "undefined" });
+    });
+
+    it("S1: RegExp.constructor.constructor 不可达宿主 process", async () => {
+      const executor = executors.code;
+      const ctx = {
+        signal: new AbortController().signal,
+        nodeId: "s1-regexp",
+        runId: "test",
+        log: vi.fn(),
+        varCtx: new VariableContext(),
+        host: {} as any,
+      };
+
+      const result = await executor.execute(
+        { id: "s1-regexp", type: "code", code: "return RegExp.constructor.constructor('return typeof process')()" } as any,
+        {},
+        ctx as any,
+      );
+      expect(result).toEqual({ result: "undefined" });
+    });
+
     it("abort signal terminates worker", async () => {
       const executor = executors.code;
       const ac = new AbortController();
@@ -328,6 +407,50 @@ describe("P0 executors (createExecutors)", () => {
           { signal: new AbortController().signal, nodeId: "loop", varCtx } as any,
         ),
       ).rejects.toThrow(/超过最大限制/);
+    });
+
+    it("S3: throws on single-node-object body (not a valid shape)", async () => {
+      const executor = executors.iteration;
+      const { setExecutorResolver } = await import("../src/executors/iteration.js");
+      setExecutorResolver(() => null as any);
+
+      const varCtx = new VariableContext();
+      varCtx.set("start", { items: [1] });
+
+      await expect(
+        executor.execute(
+          {
+            id: "loop",
+            type: "iteration",
+            over: "{{#start.items}}",
+            body: { id: "step", type: "code" }, // 单节点对象——非法形状
+          } as any,
+          {},
+          { signal: new AbortController().signal, nodeId: "loop", varCtx } as any,
+        ),
+      ).rejects.toThrow(/body 必须是节点数组或/);
+    });
+
+    it("S3: throws on undefined body", async () => {
+      const executor = executors.iteration;
+      const { setExecutorResolver } = await import("../src/executors/iteration.js");
+      setExecutorResolver(() => null as any);
+
+      const varCtx = new VariableContext();
+      varCtx.set("start", { items: [1] });
+
+      await expect(
+        executor.execute(
+          {
+            id: "loop",
+            type: "iteration",
+            over: "{{#start.items}}",
+            // body 未定义——非法形状
+          } as any,
+          {},
+          { signal: new AbortController().signal, nodeId: "loop", varCtx } as any,
+        ),
+      ).rejects.toThrow(/body 必须是节点数组或/);
     });
   });
 

@@ -23,8 +23,13 @@ export function setExecutorResolver(
  * node.over 为变量引用（如 "{{#start.items}}"），解析为数组。
  * node.maxIterations 默认 500，超限抛错。
  * node.maxConcurrency 默认 5，用 p-queue 限流。
- * node.body 可以是单节点对象或节点数组（线性执行，无内部连线）。
+ * node.body 支持两种形态：
+ *   ① 节点数组（线性执行，无内部连线）
+ *   ② { nodes, edges }（本棒 edges 忽略——见 T10 增强；仅按 nodes 线性执行）
  * 聚合每次迭代输出为 outputs.items 数组。
+ *
+ * 3c：PQueue 并发语义——最坏在飞（同时执行）数量 ≈ 引擎并发 × maxConcurrency。
+ * 任一迭代失败后调用 queue.clear() 阻止已入队任务继续空转，仅已在飞任务跑完。
  */
 export const iterationExecutor: NodeExecutor = {
   type: "iteration",
@@ -52,7 +57,7 @@ export const iterationExecutor: NodeExecutor = {
     const concurrency = node.maxConcurrency ?? DEFAULT_MAX_CONCURRENCY;
 
     // 解析 body
-    const bodyNodes = resolveBody(node.body);
+    const bodyNodes = resolveBody(node.body, ctx.nodeId);
     if (bodyNodes.length === 0) {
       return { items: [] };
     }
@@ -101,7 +106,16 @@ export const iterationExecutor: NodeExecutor = {
         }),
     );
 
-    const results = await Promise.all(iterationResults);
+    // 3c：任一迭代失败即清理队列，阻止已入队任务继续空转；
+    // 已在飞的任务（最多 concurrency 个）继续跑完
+    const results = await Promise.all(
+      iterationResults.map((p) =>
+        p.catch((err) => {
+          queue.clear();
+          throw err;
+        }),
+      ),
+    );
     const itemsOutput = results.filter((r): r is NodeOutput => r !== null);
 
     return { items: itemsOutput };
@@ -109,21 +123,33 @@ export const iterationExecutor: NodeExecutor = {
 };
 
 /**
- * 解析 body 为节点数组。
- * 支持：单节点对象、节点数组、{ nodes, edges } 对象。
+ * 解析 body 为节点数组。仅支持两种形态（S3）：
+ * ① 节点数组（线性顺序映射，无内部连线）
+ * ② { nodes, edges }（本棒 edges 忽略，仅按 nodes 线性执行；
+ *    T10 增强将支持 edges 驱动的内部连线——见 schema 注释 D4）
+ * 其余形状（含单节点对象、null/undefined 等）一律抛错，不再静默返回空结果。
  */
-function resolveBody(body: unknown): WorkflowNode[] {
-  if (!body) return [];
+function resolveBody(body: unknown, nodeId: string): WorkflowNode[] {
+  // 形态①：节点数组
   if (Array.isArray(body)) {
     return body as WorkflowNode[];
   }
-  if (typeof body === "object" && body !== null) {
+  // 形态②：{ nodes, edges }
+  if (body !== null && typeof body === "object") {
     const obj = body as Record<string, unknown>;
     if (Array.isArray(obj.nodes)) {
+      if (Array.isArray(obj.edges) && obj.edges.length > 0) {
+        console.warn(
+          `iteration "${nodeId}": body 携带 ${obj.edges.length} 条 edges，本棒仍忽略（T10 增强），仅按 nodes 线性执行`,
+        );
+      }
       return obj.nodes as WorkflowNode[];
     }
   }
-  return [];
+  const shape = body === null ? "null" : typeof body;
+  throw new Error(
+    `iteration "${nodeId}": body 必须是节点数组或 { nodes, edges } 对象，实际为 ${shape}`,
+  );
 }
 
 /**
