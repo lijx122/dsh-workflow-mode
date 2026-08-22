@@ -111,6 +111,7 @@ export class WorkflowValidationError extends Error {
 
 interface RunControl {
   aborted: boolean;
+  stopRequested: boolean;
   controller: AbortController;
 }
 
@@ -194,7 +195,7 @@ export class WorkflowEngine {
     // ---- 运行初始化 ----
     const runId = crypto.randomUUID();
     const controller = new AbortController();
-    const control: RunControl = { aborted: false, controller };
+    const control: RunControl = { aborted: false, stopRequested: false, controller };
     this.runs.set(runId, control);
 
     const nodes = new Map(snapshot.nodes.map((n) => [n.id, n]));
@@ -304,6 +305,7 @@ export class WorkflowEngine {
       let timer: ReturnType<typeof setTimeout> | undefined;
       return new Promise<NodeOutput>((resolve, reject) => {
         timer = setTimeout(() => {
+          control.aborted = true; // 同步标志，确保 willRetry/willDispatch 判不成立
           controller.abort(); // 熔断：run 级信号中止
           reject(
             new Error(
@@ -494,7 +496,8 @@ export class WorkflowEngine {
 
     // ---- 计算最终状态 ----
     let status: RunStatus;
-    if (control.aborted) {
+    if (control.stopRequested) {
+      // 仅用户 stop() 才置 stopped；超时熔断按失败收尾（failed）
       status = "stopped";
     } else {
       const hasFailed = Object.values(nodeStates).some(
@@ -516,6 +519,7 @@ export class WorkflowEngine {
     const state = this.runs.get(runId);
     if (!state) return false;
     state.aborted = true;
+    state.stopRequested = true;
     state.controller.abort();
     return true;
   }

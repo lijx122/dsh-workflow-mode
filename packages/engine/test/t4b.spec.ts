@@ -432,4 +432,73 @@ describe("WorkflowEngine · T4b（熔断/重试/DPE/快照/AbortSignal）", () =
       ),
     ).toBe(false);
   });
+
+  it("⑥ 超时熔断同步 aborted：retry:{max:3} 节点首次超时即终结（不再重试），并行旁支不被派发", async () => {
+    // A 配 retry 且每次执行都睡眠超过 timeoutMs：修正前 control.aborted 未同步，
+    // willRetry 仍判真导致死循环重试；修正后首次超时即 final failed，且旁支 B 不再派发
+    const workflow = dsl(
+      [
+        { id: "start", type: "start" },
+        { id: "a", type: "code", code: "a", timeoutMs: 50, retry: { max: 3, backoffMs: 10 } },
+        { id: "b", type: "code", code: "b" },
+      ],
+      [
+        { id: "e1", source: "start", target: "a" },
+        { id: "e2", source: "start", target: "b" },
+      ],
+    );
+
+    let aExecutions = 0;
+    let bExecutions = 0;
+    const engine = new Engine(
+      stubExecutors({
+        start: { type: "start", execute: async () => ({ ok: true }) },
+        code: {
+          type: "code",
+          execute: async (_n, _i, ctx) => {
+            if (ctx.nodeId === "a") {
+              aExecutions++;
+              // 每次执行都睡眠远超超时；熔断信号到达后返回（清理模拟），避免悬挂计时器
+              await waitForAbort(ctx);
+              return { late: true };
+            }
+            if (ctx.nodeId === "b") {
+              bExecutions++;
+              return { side: true };
+            }
+            return { ok: true };
+          },
+        },
+      }),
+      { maxParallelNodes: 1 }, // A 先占用调度槽，B 在队列等待；A 超时后 B 不得再进入 running
+    );
+
+    const result = await engine.run(workflow, {});
+    // run 终态 failed（超时熔断按失败收尾，而非 stopped）
+    expect(result.status).toBe("failed");
+    // A 首次超时即 failed，仅执行 1 次（无重试）
+    expect(aExecutions).toBe(1);
+    expect(result.nodeStates.a.status).toBe("failed");
+    expect(result.nodeStates.a.error).toContain("timeout");
+    // node_error 恰 1 条（attempt 1，无 retrying），且不存在 attempt:2
+    const errs = result.events.filter(
+      (ev) => ev.type === "node_error" && ev.nodeId === "a",
+    );
+    expect(errs).toHaveLength(1);
+    expect(errs[0].data?.attempt).toBe(1);
+    expect(errs[0].data?.retrying).toBeUndefined();
+    expect(
+      result.events.some(
+        (ev) => ev.type === "node_error" && ev.nodeId === "a" && ev.data?.attempt === 2,
+      ),
+    ).toBe(false);
+    // 并行旁支 B 未被派发：保持 pending、无执行、无 node_start
+    expect(bExecutions).toBe(0);
+    expect(result.nodeStates.b.status).toBe("pending");
+    expect(
+      result.events.some(
+        (ev) => ev.type === "node_start" && ev.nodeId === "b",
+      ),
+    ).toBe(false);
+  });
 });
