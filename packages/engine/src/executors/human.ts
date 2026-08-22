@@ -1,17 +1,110 @@
 import type { NodeExecutor, NodeOutput } from "../engine.js";
+import type { ExecutionContext } from "../engine.js";
 import type { HumanNode } from "@dsh-workflow/schema";
-import { NotImplementedError } from "./errors.js";
+import { hostNotBound } from "./errors.js";
 
 /**
- * human：人机交互断点节点（stub）。
- * DSH host 服务绑定（tools/ask-user 通道）属 T6，本棒仅保持注册表完整。
+ * human：人机交互断点节点。
+ *
+ * 契约：
+ * - 调 host.askUser({ prompt: node.prompt 插值后, inputs: 当前 inputs 快照 })
+ * - 返回 Promise<{ decision, inputs? }>
+ * - decision === "rejected" → 节点以含 "rejected" 描述的错误失败
+ * - decision === "approved" 且 response.inputs 非空 → 合并入节点输出（回写），
+ *   下游可用 {{#nodeId.field}} 引用用户输入值
+ * - node.timeoutMs 设内部超时（onTimeout 默认 "abort"）；
+ *   超时后 onTimeout="abort" → 抛错，onTimeout="proceed" → 以 {decision:"proceed"} 继续
+ * - ctx.signal abort 时（run stop / 熔断）立即 reject
+ * - host.askUser 缺失 → 抛 hostNotBound("askUser")
  */
 export const humanExecutor: NodeExecutor = {
   type: "human",
   async execute(
-    _node: HumanNode,
-    _inputs: Record<string, NodeOutput[string]>,
+    node: HumanNode,
+    inputs: Record<string, NodeOutput[string]>,
+    ctx: ExecutionContext,
   ): Promise<NodeOutput> {
-    throw new NotImplementedError("T6 binds DSH services (human/ask-user)");
+    const askUser = ctx.host.askUser;
+    if (!askUser) {
+      throw hostNotBound("askUser");
+    }
+
+    // prompt 插值（支持 {{#prev.field}} 引用上游变量）；inputs 做深拷贝快照，
+    // 避免传给外部进程期间被并发修改
+    const prompt = ctx.varCtx.interpolate(node.prompt);
+    const inputsSnapshot =
+      inputs && typeof inputs === "object"
+        ? structuredClone(inputs)
+        : undefined;
+
+    const timeoutMs = node.timeoutMs ?? 0;
+    const onTimeout = node.onTimeout ?? "abort";
+
+    const askPromise = askUser({ prompt, inputs: inputsSnapshot });
+
+    // run stop / 熔断传播：signal abort 即拒绝，human 等待不悬挂
+    const signalPromise = new Promise<never>((_, reject) => {
+      const onAbort = () =>
+        reject(
+          new Error(`human node "${ctx.nodeId}" aborted by run signal`),
+        );
+      if (ctx.signal.aborted) {
+        onAbort();
+        return;
+      }
+      ctx.signal.addEventListener("abort", onAbort, { once: true });
+    });
+
+    // 超时竞争者：one-shot timer，mode=proceed 时 resolve {decision:"proceed"}，abort 时 reject
+    const timeoutPromise =
+      timeoutMs > 0
+        ? new Promise<{ decision: string }>((resolve, reject) => {
+            const timer = setTimeout(() => {
+              if (onTimeout === "proceed") {
+                resolve({ decision: "proceed" });
+              } else {
+                reject(
+                  new Error(
+                    `human node "${ctx.nodeId}" timed out after ${timeoutMs}ms (onTimeout=abort)`,
+                  ),
+                );
+              }
+            }, timeoutMs);
+            // askUser 先完成则清掉 timer，防止泄漏；one-shot 语义下此分支仅防御性
+            askPromise.then(
+              () => clearTimeout(timer),
+              () => clearTimeout(timer),
+            );
+          })
+        : null;
+
+    let outcome: { decision: string; inputs?: Record<string, NodeOutput[string]> };
+    try {
+      const settled = await Promise.race([
+        askPromise,
+        ...(timeoutPromise ? [timeoutPromise] : []),
+        signalPromise,
+      ]);
+      outcome = settled as typeof outcome;
+    } catch (e: unknown) {
+      if (e instanceof Error) throw e;
+      throw new Error(String(e));
+    }
+
+    if (outcome.decision === "rejected") {
+      throw new Error(`human node "${ctx.nodeId}" rejected: decision=rejected`);
+    }
+
+    // 合并回写：outcome.inputs 非空时合并进节点输出（varCtx 记录即节点输出，
+    // 引擎在成功后 varCtx.set(nodeId, output)——见 engine.dispatch 的 "success" 分支）
+    const mergedOutput: NodeOutput = { decision: outcome.decision };
+    if (outcome.inputs && typeof outcome.inputs === "object") {
+      for (const [k, v] of Object.entries(outcome.inputs)) {
+        mergedOutput[k] = v as NodeOutput[string];
+      }
+      mergedOutput.inputs = outcome.inputs as Record<string, NodeOutput[string]>;
+    }
+
+    return mergedOutput;
   },
 };

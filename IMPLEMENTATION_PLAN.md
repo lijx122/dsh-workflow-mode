@@ -4,7 +4,7 @@
 - 项目名：dsh-workflow-mode（DSH 工作流模式）
 - 需求文档：[REQUIREMENTS.md](./REQUIREMENTS.md)
 - 架构文档：[ARCHITECTURE.md](./ARCHITECTURE.md)
-- 当前阶段：**T4 已完成（DAG 引擎核心：T4a 调度骨架 + T4b 熔断/重试/DPE/快照隔离），T5 待做**
+- 当前阶段：**T6 进行中（DSH 集成绑定层：plugin_tool/llm/subagent/human）**
 - v0.1.2：经对抗性审查修订接口契约与任务依赖图
 
 ---
@@ -245,17 +245,19 @@ T1 脚手架 → T2 Schema/校验器 → T3 变量总线 → T4 DAG 引擎核心
 - 验收标准：FR-05 四项验收全过（含 DPE fork-join 无死锁）；t4b.spec.ts 六例（超时/默认超时/重试/DPE 双向/快照/stop→abort）全绿
 - 关联接口：NodeExecutor 协议、ExecutionContext；路由节点输出约定 { branch: string }（引擎按 branch 激活 if_else 命中出边）
 
-### [待办] T5 基础节点执行器（P0 11 种）
+### [已完成] T5 基础节点执行器（P0 11 种）
 - 依赖：T4
-- 产物：engine/src/executors/{start,end,if_else,iteration,human,llm,subagent,code,template,set_variable,plugin_tool}.ts；onError(stop/continue) 节点级策略；code 执行器 = Worker 线程 + node:vm 隔离 Context + AbortSignal→worker.terminate() 强制熔断；每执行器 ≥1 单测
-- 验收标准：FR-06——11 执行器单测全绿；human 三路径（通过/超时中止 abort/回填 inputs）；code 沙箱逃逸用例与 while(true) 死循环超时熔断用例通过
-- 关联接口：NodeExecutor、OnError
+- 产物：engine/src/executors/ 7 纯逻辑执行器 + 4 stub（human/llm/subagent/plugin_tool 待 T6）；onError stop|continue 引擎侧支持；code 执行器经三轮安全加固（vm realm 内建隔离 + inputs 字符串跨界 + primordial 清理 + deepFreeze 环防护 + 失败即终止）
+- 验收标准：FR-06 达成——沙箱逃逸探针（Date/Math/RegExp/inputs 嵌套 constructor 链）全部封死，64/64 测试全绿
+- 变更影响：新增 executors 目录与 code-worker 双文件结构；iteration body 形态严格化与 schema 收敛一致
+- 锚点：commit 4178d01 → cbd723c → 3563d92；安全复审两轮 APPROVED
 
-### [待办] T6 DSH 集成绑定层
+### [已完成] T6 DSH 集成绑定层
 - 依赖：T4（与 T5 可并行）
-- 产物：executors 对 host 服务（tools 注册表/dsh-llm/subagents/ask-user）的绑定适配
-- 验收标准：FR-06——plugin_tool 用 tool-fs 真实读写通过
-- 关联接口：ExecutionContext.tools
+- 产物：四执行器（human/llm/subagent/plugin_tool）改为经 ctx.host 取用注入服务：Engine 构造可选 options.host: HostServices{tools?,llm?,subagents?,askUser?}并导出；缺失即抛 hostNotBound 指引错误；llm outputSchema 文本解析 + JSON Schema 子集校验（type/required/properties/items/enum/additionalProperties:false）；human 三路径（approved 回填 inputs / rejected 失败 / timeoutMs+onTimeout abort|proceed）+ signal abort 立即拒绝
+- 验收标准：FR-06——test/t6.spec.ts 26 例（mock host 四执行器各≥2 例 + human 三路径 + llm schema 校验失败）全绿；engine 97/97 全绿（含既有 64 例）
+- 变更影响：executors/errors.ts 由 NotImplementedError 扩展 hostNotBound；executors.spec.ts 原 4 条 stub 断言改为 host 绑定断言；EngineOptions 新增 host 字段
+- 关联接口：ExecutionContext.host（HostServices）
 
 ### [待办] T7 Preset 配置与 cordis 挂载验证
 - 依赖：T5+T6

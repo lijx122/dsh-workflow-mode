@@ -59,4 +59,4 @@ export function createExecutors(): Record<NodeType, NodeExecutor> {
   return registry as Record<NodeType, NodeExecutor>;
 }
 
-export { NotImplementedError } from "./errors.js";
+export { NotImplementedError, hostNotBound } from "./errors.js";

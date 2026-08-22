@@ -33,6 +33,51 @@ export interface NodeExecutor {
   ): Promise<NodeOutput>;
 }
 
+/**
+ * DSH host 服务适配器（T6 注入模式）：
+ * engine 包不直接 import DSH 运行时，T7 preset 组合层把真实服务注入
+ * Engine 构造函数 options.host；单测注入 mock。各服务可选——
+ * 执行器取用时缺失即抛带指引的错误（见 executors/errors.ts 的 hostNotBound）。
+ */
+export interface HostServices {
+  /** plugin_tool 反射调用：注册表式工具（如 tool-fs/tool-git） */
+  tools?: {
+    /**
+     * 调用工具。args 由 executor 组装：{ ...node.inputs, action? }（node.action 权威）。
+     * 工具不存在时实现方可拒绝（reject）或经 has() 前置检查。
+     */
+    invoke(
+      toolName: string,
+      args: Record<string, JsonValue>,
+    ): Promise<JsonValue>;
+    /** 可选：工具存在性检查，供 executor 在调用前给出明确报错 */
+    has?(toolName: string): boolean;
+  };
+  /** llm / intent_classifier / parameter_extractor 的模型补全通道 */
+  llm?: {
+    complete(args: {
+      model?: string;
+      prompt: string;
+      systemPrompt?: string;
+      outputSchema?: unknown;
+    }): Promise<{ text: string }>;
+  };
+  /** subagent 节点：子代理一次性 spawn，结构化回收 result */
+  subagents?: {
+    spawn(args: {
+      prompt: string;
+      preset?: string;
+    }): Promise<{ result: JsonValue }>;
+  };
+  /** human 节点：人机审批通道；decision 语义 "approved"|"rejected"|"proceed" */
+  askUser?: (args: {
+    prompt: string;
+    inputs?: Record<string, JsonValue>;
+  }) => Promise<{ decision: string; inputs?: Record<string, JsonValue> }>;
+  /** code 节点 Worker 沙箱（T5 已绑定，保留占位） */
+  codeRuntime?: unknown;
+}
+
 export interface ExecutionContext {
   runId: string;
   nodeId: string;
@@ -40,12 +85,7 @@ export interface ExecutionContext {
   log(event: RunEvent): void;
   varCtx: VariableContext;
   callStack?: string[];
-  host: {
-    tools: unknown;
-    llm: unknown;
-    subagents: unknown;
-    codeRuntime: unknown;
-  };
+  host: HostServices;
 }
 
 export interface RunEvent {
@@ -87,12 +127,11 @@ export interface EngineOptions {
    * 到时该次 executor 调用以含 "timeout" 的错误失败，并中止 run 级 AbortController（熔断传播）。
    */
   defaultNodeTimeoutMs?: number;
-  host?: {
-    tools?: unknown;
-    llm?: unknown;
-    subagents?: unknown;
-    codeRuntime?: unknown;
-  };
+  /**
+   * DSH host 服务适配器（T6 注入模式）：缺省全部未绑定，绑定后由
+   * human/llm/subagent/plugin_tool 执行器取用。见 HostServices。
+   */
+  host?: HostServices;
 }
 
 // ================= 校验错误 =================

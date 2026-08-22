@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 
 import { WorkflowEngine as Engine } from "../src/index.js";
-import { createExecutors, NotImplementedError } from "../src/index.js";
+import { createExecutors } from "../src/index.js";
 import type { WorkflowDSL as DSL } from "@dsh-workflow/schema";
 import type {
   NodeExecutor as Executor,
@@ -495,18 +495,114 @@ describe("P0 executors (createExecutors)", () => {
     });
   });
 
-  // ========== 8. stub executors ==========
-  describe("stub executors (T6)", () => {
+  // ========== 8. DSH executors (T6) ==========
+  describe("DSH executors (T6) — host binding", () => {
     it.each([
-      ["human", "human"],
-      ["llm", "llm"],
-      ["subagent", "subagent"],
-      ["plugin_tool", "plugin_tool"],
-    ])("%s throws NotImplementedError", async (_, type) => {
+      ["human", "human", "askUser"],
+      ["llm", "llm", "llm"],
+      ["subagent", "subagent", "subagents"],
+      ["plugin_tool", "plugin_tool", "tools"],
+    ])("%s throws hostNotBound when host service missing", async (_, type, service) => {
       const executor = executors[type as NType];
+      // 提供 minimal ctx 使 executor 走到 host 取用点
+      const varCtx = new VariableContext();
+      const ctx = { host: {}, varCtx, signal: new AbortController().signal, nodeId: "test", runId: "test", log: () => {} } as any;
       await expect(
-        executor.execute({} as any, {}, {} as any),
-      ).rejects.toThrow(NotImplementedError);
+        executor.execute({ id: "test", type } as any, {}, ctx),
+      ).rejects.toThrow(`host service "${service}" not bound`);
+    });
+
+    it("human with mock host.askUser returns approved", async () => {
+      const executor = executors.human;
+      const varCtx = new VariableContext();
+      const askUser = async () => ({ decision: "approved" });
+      const ctx = { host: { askUser }, varCtx, signal: new AbortController().signal, nodeId: "test", runId: "test", log: () => {} } as any;
+      const result = await executor.execute(
+        { id: "test", type: "human", prompt: "confirm?" } as any,
+        {},
+        ctx,
+      );
+      expect(result.decision).toBe("approved");
+    });
+
+    it("human with mock host.askUser returns rejected → throws", async () => {
+      const executor = executors.human;
+      const varCtx = new VariableContext();
+      const askUser = async () => ({ decision: "rejected" });
+      const ctx = { host: { askUser }, varCtx, signal: new AbortController().signal, nodeId: "test", runId: "test", log: () => {} } as any;
+      await expect(
+        executor.execute(
+          { id: "test", type: "human", prompt: "confirm?" } as any,
+          {},
+          ctx,
+        ),
+      ).rejects.toThrow(/rejected/);
+    });
+
+    it("llm with mock host.llm.complete returns text", async () => {
+      const executor = executors.llm;
+      const varCtx = new VariableContext();
+      const llm = { complete: async () => ({ text: "hello world" }) };
+      const ctx = { host: { llm }, varCtx, signal: new AbortController().signal, nodeId: "test", runId: "test", log: () => {} } as any;
+      const result = await executor.execute(
+        { id: "test", type: "llm", prompt: "say hi" } as any,
+        {},
+        ctx,
+      );
+      expect(result.result).toBe("hello world");
+    });
+
+    it("llm with outputSchema validates result", async () => {
+      const executor = executors.llm;
+      const varCtx = new VariableContext();
+      const llm = { complete: async () => ({ text: '{"name":"Alice","age":30}' }) };
+      const ctx = { host: { llm }, varCtx, signal: new AbortController().signal, nodeId: "test", runId: "test", log: () => {} } as any;
+      const result = await executor.execute(
+        { id: "test", type: "llm", prompt: "get user", outputSchema: { type: "object", properties: { name: { type: "string" }, age: { type: "integer" } }, required: ["name", "age"] } } as any,
+        {},
+        ctx,
+      );
+      expect(result.result).toEqual({ name: "Alice", age: 30 });
+    });
+
+    it("llm outputSchema validation fails on type mismatch", async () => {
+      const executor = executors.llm;
+      const varCtx = new VariableContext();
+      const llm = { complete: async () => ({ text: '{"name":123}' }) };
+      const ctx = { host: { llm }, varCtx, signal: new AbortController().signal, nodeId: "test", runId: "test", log: () => {} } as any;
+      await expect(
+        executor.execute(
+          { id: "test", type: "llm", prompt: "get user", outputSchema: { type: "object", properties: { name: { type: "string" } }, required: ["name"] } } as any,
+          {},
+          ctx,
+        ),
+      ).rejects.toThrow(/outputSchema 校验失败/);
+    });
+
+    it("subagent with mock host.subagents.spawn returns result", async () => {
+      const executor = executors.subagent;
+      const varCtx = new VariableContext();
+      const subagents = { spawn: async () => ({ result: { answer: 42 } }) };
+      const ctx = { host: { subagents }, varCtx, signal: new AbortController().signal, nodeId: "test", runId: "test", log: () => {} } as any;
+      const result = await executor.execute(
+        { id: "test", type: "subagent", prompt: "do work" } as any,
+        {},
+        ctx,
+      );
+      expect(result.result).toEqual({ answer: 42 });
+    });
+
+    it("plugin_tool with mock host.tools.invoke returns output", async () => {
+      const executor = executors.plugin_tool;
+      const varCtx = new VariableContext();
+      const tools = { invoke: async () => ({ data: "ok" }), has: () => true };
+      const ctx = { host: { tools }, varCtx, signal: new AbortController().signal, nodeId: "test", runId: "test", log: () => {} } as any;
+      const result = await executor.execute(
+        { id: "test", type: "plugin_tool", toolName: "fs" } as any,
+        { path: "/tmp" },
+        ctx,
+      );
+      expect(result.data).toBe("ok");
     });
   });
 });
@@ -730,4 +826,3 @@ describe("T5③ deepFreeze cycle guard", () => {
     expect(ok).toBe(true);
   });
 });
-
