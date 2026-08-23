@@ -19,8 +19,13 @@ import {
   type RunStatus,
 } from "@dsh-workflow/engine";
 
+import { WorkflowFileWatcher } from "./watcher.js";
+
 export interface WorkflowControllerOptions {
   workflowsDir?: string;
+  watcher?: boolean;
+  debounceMs?: number;
+  onRegistryChange?: (file: string) => void;
 }
 
 export interface RunHistorySummary {
@@ -70,6 +75,7 @@ export interface RunCheckpointData {
 export class WorkflowController {
   readonly engine: WorkflowEngine;
   readonly workflowsDir: string;
+  readonly registry = new Map<string, { dsl: WorkflowDSL; version: number }>();
   private readonly versions = new Map<string, number>();
   private readonly activeRuns = new Map<
     string,
@@ -79,10 +85,34 @@ export class WorkflowController {
       workflowName: string;
     }
   >();
+  readonly fileWatcher?: WorkflowFileWatcher;
+  onRegistryChange?: (file: string) => void;
 
   constructor(engine: WorkflowEngine, opts: WorkflowControllerOptions = {}) {
     this.engine = engine;
     this.workflowsDir = opts.workflowsDir ?? path.resolve(".dsh/workflows");
+    this.onRegistryChange = opts.onRegistryChange;
+
+    if (opts.watcher) {
+      this.fileWatcher = new WorkflowFileWatcher({
+        workflowsDir: this.workflowsDir,
+        debounceMs: opts.debounceMs,
+        onValid: (file, dsl) => {
+          const current = this.registry.get(file);
+          const version =
+            (current ? current.version : (this.versions.get(file) ?? 0)) + 1;
+          this.registry.set(file, { dsl, version });
+          this.versions.set(file, version);
+          if (this.onRegistryChange) {
+            this.onRegistryChange(file);
+          }
+        },
+        onInvalid: (_file, _errors) => {
+          // 失败→last-good 回退通知（保持原 registry 不变）
+        },
+      });
+      this.fileWatcher.start();
+    }
   }
 
   /**
@@ -157,14 +187,23 @@ export class WorkflowController {
     file: string,
     params: Record<string, JsonValue> = {},
   ): Promise<{ runId: string }> {
-    const filePath = this.resolveFilePath(file);
-    const val = this.validate(file);
-    if (!val.ok) {
-      throw new WorkflowValidationError(val);
-    }
+    let dsl: WorkflowDSL;
+    const normalizedKey = path
+      .relative(this.workflowsDir, this.resolveFilePath(file))
+      .replace(/\\/g, "/");
+    const cached = this.registry.get(file) ?? this.registry.get(normalizedKey);
 
-    const content = fs.readFileSync(filePath, "utf-8");
-    const dsl = JSON.parse(content) as WorkflowDSL;
+    if (cached) {
+      dsl = structuredClone(cached.dsl);
+    } else {
+      const filePath = this.resolveFilePath(file);
+      const val = this.validate(file);
+      if (!val.ok) {
+        throw new WorkflowValidationError(val);
+      }
+      const content = fs.readFileSync(filePath, "utf-8");
+      dsl = JSON.parse(content) as WorkflowDSL;
+    }
 
     const runId = crypto.randomUUID();
     const rawName = dsl.name || path.basename(file, ".json");
@@ -539,12 +578,40 @@ export class WorkflowController {
     errors?: ValidateError[];
   } {
     const val = this.validate(file);
-    const current = this.versions.get(file) ?? 0;
+    const normalizedKey = path
+      .relative(this.workflowsDir, this.resolveFilePath(file))
+      .replace(/\\/g, "/");
+    const current =
+      this.registry.get(file)?.version ??
+      this.registry.get(normalizedKey)?.version ??
+      this.versions.get(file) ??
+      this.versions.get(normalizedKey) ??
+      0;
     if (val.ok) {
       const next = current + 1;
+      const filePath = this.resolveFilePath(file);
+      try {
+        const content = fs.readFileSync(filePath, "utf-8");
+        const dsl = JSON.parse(content) as WorkflowDSL;
+        this.registry.set(file, { dsl, version: next });
+        this.registry.set(normalizedKey, { dsl, version: next });
+      } catch {
+        // ignore
+      }
       this.versions.set(file, next);
+      this.versions.set(normalizedKey, next);
+      this.onRegistryChange?.(file);
       return { version: next, ok: true };
     }
     return { version: current, ok: false, errors: val.errors };
+  }
+
+  /**
+   * 停止文件监听
+   */
+  async stopWatcher(): Promise<void> {
+    if (this.fileWatcher) {
+      await this.fileWatcher.stop();
+    }
   }
 }

@@ -5,3 +5,5 @@ export type {
   StatusResult,
   RunCheckpointData,
 } from "./controller.js";
+export { WorkflowFileWatcher } from "./watcher.js";
+export type { WorkflowFileWatcherOptions } from "./watcher.js";

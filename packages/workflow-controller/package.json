@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@dsh-workflow/engine": "workspace:*",
-    "@dsh-workflow/schema": "workspace:*"
+    "@dsh-workflow/schema": "workspace:*",
+    "chokidar": "^5.0.0"
   }
 }
