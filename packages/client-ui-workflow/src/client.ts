@@ -11,20 +11,17 @@ import { WorkflowCanvas } from "./canvas.js";
 
 export const inject = [];
 
-export interface DshClientContext {
-  slots?: {
-    register: (slotDef: {
-      id: string;
-      title: string;
-      icon?: string;
-      component: unknown;
-    }) => void;
-  };
-  runtime?: unknown;
-}
+/**
+ * Cordis Client apply entrypoint.
+ * No injected services needed — WorkflowCanvas is exported as a standalone React view.
+ */
+export function apply(): void {}
 
-export function activate(ctx?: DshClientContext): void {
-  if (ctx?.slots?.register) {
+/**
+ * Activation hook for test suites / custom callers
+ */
+export function activate(ctx?: { slots?: { register?: (def: any) => void } }): void {
+  if (ctx && typeof ctx === "object" && "slots" in ctx && ctx.slots?.register) {
     ctx.slots.register({
       id: "workflow-canvas",
       title: "Workflow Canvas",
@@ -32,10 +29,6 @@ export function activate(ctx?: DshClientContext): void {
       component: WorkflowCanvas,
     });
   }
-}
-
-export function apply(ctx?: DshClientContext): void {
-  activate(ctx);
 }
 
 export { WorkflowCanvas };
