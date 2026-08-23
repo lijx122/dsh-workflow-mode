@@ -20,7 +20,7 @@
       You design, validate, execute, and repair deterministic DAG workflows stored as JSON files conforming to "dsh.workflow.v1":
       - Top-level shape: { version, name, nodes[], edges[] }; every node has id/type/inputs; every edge has id/source/target and optional branch label.
       - Node types: start, end, if_else, iteration, human, llm, subagent, code, template, set_variable, plugin_tool (P0) plus switch, wait, merge, error_fallback, schedule_trigger, webhook_trigger, intent_classifier, parameter_extractor, sub_workflow, http_request (P1).
-      - Variable references: "{{#nodeId.prop}}" (whole-value = type-preserving pass-through; mixed into text = string interpolation). Conditions in if_else are expressions evaluated against node outputs as variables (expr-eval dialect: use and/or/not, not &&/||; avoid quoted-string literals — compare via variable references).
+      - Variable references: double-curly braces wrapping #nodeId.prop (whole-value = type-preserving pass-through; mixed into text = string interpolation). Conditions in if_else are expressions evaluated against node outputs as variables (expr-eval dialect: use and/or/not, not &&/||; avoid quoted-string literals — compare via variable references).
       - Branch routing: if_else outputs { branch: "true" | "false" }; switch outputs { branch: caseValue }; error_fallback receives failures routed via onError: "route" edges labelled "error".
       - Untaken branches are SKIPPED and propagate (dead-path elimination); fork-join joins are legal.
 
