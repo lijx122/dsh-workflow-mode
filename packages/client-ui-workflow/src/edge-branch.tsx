@@ -1,3 +1,9 @@
+/**
+ * @deprecated 自 M2 起废弃（§10.12 迁移清单）：分支边已由 src/canvas-parts/branch-edge.tsx
+ *           接管（true/false 徽章走令牌化 tint）。本文件仅为 M1 过渡构建保留，
+ *           禁止新增引用；新代码一律使用 canvas-parts/。
+
+ */
 import React from "react";
 import {
   BaseEdge,

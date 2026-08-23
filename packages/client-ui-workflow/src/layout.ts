@@ -1,3 +1,9 @@
+/**
+ * @deprecated 自 M2 起废弃（§10.12 迁移清单）：布局已由 src/canvas-parts/layout-v2.ts
+ *           接管（240px 卡宽、实测高度、废除 200×90 与钉死端口像素，§10.7）。
+ *           本文件仅为旧测试与过渡构建保留，禁止新增引用。
+
+ */
 import type { WorkflowNode, WorkflowEdge } from "@dsh-workflow/schema";
 
 export interface NodePosition {

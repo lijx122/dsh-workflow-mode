@@ -183,7 +183,7 @@ export const WorkflowStudio: React.FC<WorkflowStudioProps> = ({ onClose }) => {
       <div className={css.toolbar}>
         <div className={css.toolGroup}>
           <div className={css.titleArea}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#818cf8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" style={{ stroke: 'var(--dsw-alias-state-business-primary, #4176e6)' }} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="18" cy="18" r="3"></circle>
               <circle cx="6" cy="6" r="3"></circle>
               <path d="M13 6h3a2 2 0 0 1 2 2v7"></path>

@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DSH 工作流工作台 - 高保真原型</title>
+  <style>
+    :root {
+      /* 节点类型识别色 (插件扩展调色板，双主题共用) */
+      --dsw-node-start-end: #61666b;
+      --dsw-node-llm: #4176e6;
+      --dsw-node-subagent: #06b6d4;
+      --dsw-node-if-else: #f59e0b;
+      --dsw-node-template: #ec4899;
+      --dsw-node-code: #8b5cf6;
+      --font-sans: -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", sans-serif;
+      --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+
+    /* ============ 浅色主题 (DSH 官方 body 默认层) ============ */
+    body {
+      --dsw-alias-bg-base: #ffffff;
+      --dsw-alias-bg-layer-1: #ffffff;
+      --dsw-alias-bg-layer-2: #ffffff;
+      --dsw-alias-label-primary: #0f1115;
+      --dsw-alias-label-secondary: #61666b;
+      --dsw-alias-label-tertiary: #81858c;
+      --dsw-alias-border-l1: rgba(0, 0, 0, 0.04);
+      --dsw-alias-border-l2: rgba(0, 0, 0, 0.10);
+      --dsw-alias-state-business-primary: #4176e6;
+      --dsw-alias-state-success-primary: #22c55e;
+      --dsw-alias-state-error-primary: #dc2626;
+      --dsw-alias-state-warn-primary: #f59e0b;
+
+      /* 语义派生 (由上层实现注入，此处为示意等价值) */
+      --hover-fill: rgba(38, 49, 72, 0.06);        /* interactive-bg-hover */
+      --glass-bg: rgba(255, 255, 255, 0.78);
+      --dot-color: rgba(15, 17, 21, 0.05);
+      --edge-stroke: rgba(15, 17, 21, 0.28);
+      --port-fill: #ffffff;
+      --minimap-bg: rgba(15, 17, 21, 0.04);
+      --output-bg: #f6f7f8;
+      --output-text: #16794d;
+      --shadow-card: 0 4px 16px rgba(16, 24, 40, 0.08);
+      --shadow-glass: 0 12px 32px rgba(16, 24, 40, 0.10);
+      --splitter-handle: rgba(0, 0, 0, 0.22);
+
+      /* 品牌蓝染色徽章 */
+      --tint-bg: rgba(65, 118, 230, 0.10);
+      --tint-text: #2f5fc4;
+      --tint-border: rgba(65, 118, 230, 0.30);
+    }
+
+    /* ============ 深色主题 (DSH 官方 body[data-ds-dark-theme] 层) ============ */
+    body[data-ds-dark-theme] {
+      --dsw-alias-bg-base: #151517;
+      --dsw-alias-bg-layer-1: #232324;
+      --dsw-alias-bg-layer-2: #2c2c2e;
+      --dsw-alias-label-primary: #f9fafb;
+      --dsw-alias-label-secondary: #cfd3d6;
+      --dsw-alias-label-tertiary: #adb2b8;
+      --dsw-alias-border-l1: rgba(255, 255, 255, 0.06);
+      --dsw-alias-border-l2: rgba(255, 255, 255, 0.12);
+      --dsw-alias-state-business-primary: #679efe;
+      --dsw-alias-state-success-primary: #22c55e;
+      --dsw-alias-state-error-primary: #f25a5a;
+      --dsw-alias-state-warn-primary: #f59e0b;
+
+      --hover-fill: rgba(255, 255, 255, 0.08);
+      --glass-bg: rgba(35, 35, 36, 0.78);
+      --dot-color: rgba(255, 255, 255, 0.04);
+      --edge-stroke: rgba(255, 255, 255, 0.22);
+      --port-fill: #151517;
+      --minimap-bg: rgba(0, 0, 0, 0.25);
+      --output-bg: #1a1a1c;
+      --output-text: #98c379;
+      --shadow-card: 0 4px 16px rgba(0, 0, 0, 0.30);
+      --shadow-glass: 0 12px 32px rgba(0, 0, 0, 0.38);
+      --splitter-handle: rgba(255, 255, 255, 0.25);
+
+      --tint-bg: rgba(103, 158, 254, 0.16);
+      --tint-text: #a5c4ff;
+      --tint-border: rgba(103, 158, 254, 0.35);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+    body { background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-primary); font-family: var(--font-sans); font-size: 13px; line-height: 1.5; overflow-x: hidden; min-height: 100vh; display: flex; flex-direction: column; }
+
+    /* 工作流工作台主容器: 纯工作台界面 (无宿主会话侧边栏) */
+    .studio-app { display: flex; flex-direction: row; height: 90vh; min-height: 720px; width: 100vw; position: relative; overflow: hidden; background: var(--dsw-alias-bg-base); transition: background 0.2s ease; }
+
+    /* 1. 中部画布区 (可伸缩 ~62%) */
+    .canvas-panel { flex: 1; min-width: 640px; position: relative; display: flex; flex-direction: column; background-color: var(--dsw-alias-bg-base); background-image: radial-gradient(var(--dot-color) 1.2px, transparent 1.2px); background-size: 22px 22px; overflow: hidden; transition: background-color 0.2s ease; }
+
+    /* 顶部玻璃工具栏 */
+    .canvas-toolbar { height: 52px; padding: 0 16px; display: flex; align-items: center; justify-content: space-between; background: var(--glass-bg); backdrop-filter: blur(16px) saturate(140%); border-bottom: 1px solid var(--dsw-alias-border-l1); box-shadow: 0 1px 0 var(--hover-fill) inset; z-index: 20; }
+    .toolbar-left, .toolbar-right { display: flex; align-items: center; gap: 10px; }
+    .app-title { font-size: 14px; font-weight: 600; color: var(--dsw-alias-label-primary); display: flex; align-items: center; gap: 6px; }
+    .mode-badge { font-size: 11px; padding: 2px 7px; border-radius: 6px; background: var(--tint-bg); color: var(--tint-text); border: 1px solid var(--tint-border); font-weight: 500; }
+    .workflow-select { background: var(--dsw-alias-bg-layer-2); border: 1px solid var(--dsw-alias-border-l2); color: var(--dsw-alias-label-primary); padding: 5px 10px; border-radius: 8px; font-size: 12px; outline: none; cursor: pointer; }
+    .workflow-select:focus { border-color: var(--dsw-alias-state-business-primary); }
+
+    .btn { height: 32px; padding: 0 12px; border-radius: 8px; font-size: 12px; font-weight: 500; display: inline-flex; align-items: center; justify-content: center; gap: 6px; cursor: pointer; border: 1px solid transparent; transition: all 0.15s ease; }
+    .btn-primary { background: var(--dsw-alias-state-business-primary); color: #ffffff; }
+    .btn-primary:hover { filter: brightness(1.08); }
+    .btn-secondary { background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-primary); border-color: var(--dsw-alias-border-l2); }
+    .btn-secondary:hover { background: var(--hover-fill); }
+    .btn-icon { width: 32px; height: 32px; padding: 0; border-radius: 8px; background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-secondary); border: 1px solid var(--dsw-alias-border-l2); }
+    .btn-icon:hover { color: var(--dsw-alias-label-primary); background: var(--hover-fill); }
+
+    /* 画布主视口 & SVG 连线 */
+    .canvas-viewport { flex: 1; position: relative; overflow: hidden; }
+    .svg-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 2; }
+    .edge-line { fill: none; stroke: var(--edge-stroke); stroke-width: 2px; stroke-dasharray: 4 2; animation: dashMove 30s linear infinite; }
+    .edge-line.active { stroke: var(--dsw-alias-state-business-primary); stroke-width: 2.2px; stroke-dasharray: 6 3; filter: drop-shadow(0 0 3px color-mix(in srgb, var(--dsw-alias-state-business-primary) 50%, transparent)); }
+    @keyframes dashMove { to { stroke-dashoffset: -300; } }
+
+    .edge-badge { position: absolute; font-size: 10px; font-weight: 600; padding: 2px 6px; border-radius: 4px; transform: translate(-50%, -50%); z-index: 3; pointer-events: auto; }
+    .badge-true { background: color-mix(in srgb, var(--dsw-alias-state-success-primary) 14%, transparent); color: var(--dsw-alias-state-success-primary); border: 1px solid color-mix(in srgb, var(--dsw-alias-state-success-primary) 35%, transparent); }
+    .badge-false { background: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 14%, transparent); color: var(--dsw-alias-state-warn-primary); border: 1px solid color-mix(in srgb, var(--dsw-alias-state-warn-primary) 35%, transparent); }
+
+    /* 节点卡片 (宽 240px, 圆角 10px, 3.5px 类型色条) */
+    .flow-node { position: absolute; width: 240px; background: var(--dsw-alias-bg-layer-2); border-radius: 10px; border: 1px solid var(--dsw-alias-border-l2); box-shadow: var(--shadow-card); padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; cursor: grab; z-index: 5; transition: box-shadow 0.2s, border-color 0.2s, opacity 0.2s, background 0.2s ease; }
+    .flow-node::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3.5px; border-top-left-radius: 10px; border-bottom-left-radius: 10px; background: var(--node-tag-color, #61666b); }
+    .flow-node.state-completed { border-color: var(--dsw-alias-state-success-primary); }
+    .flow-node.state-running { border-color: var(--dsw-alias-state-business-primary); box-shadow: 0 0 0 2px var(--dsw-alias-state-business-primary), 0 0 16px color-mix(in srgb, var(--dsw-alias-state-business-primary) 45%, transparent); animation: pulseGlow 2s infinite ease-in-out; }
+    .flow-node.state-pending { opacity: 0.68; }
+    .flow-node.is-selected { border-color: var(--dsw-alias-state-business-primary); box-shadow: 0 0 0 2px var(--dsw-alias-state-business-primary), 0 8px 24px color-mix(in srgb, var(--dsw-alias-state-business-primary) 28%, transparent); }
+    @keyframes pulseGlow { 0%, 100% { box-shadow: 0 0 0 2px var(--dsw-alias-state-business-primary), 0 0 14px color-mix(in srgb, var(--dsw-alias-state-business-primary) 35%, transparent); } 50% { box-shadow: 0 0 0 2.5px var(--dsw-alias-state-business-primary), 0 0 22px color-mix(in srgb, var(--dsw-alias-state-business-primary) 65%, transparent); } }
+
+    .node-header { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+    .node-title-group { display: flex; align-items: center; gap: 8px; overflow: hidden; }
+    .node-chip { width: 28px; height: 28px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 13px; background: var(--hover-fill); color: var(--node-tag-color, inherit); flex-shrink: 0; }
+    .node-name { font-size: 13px; font-weight: 600; color: var(--dsw-alias-label-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .node-badge { font-size: 10px; font-weight: 600; text-transform: uppercase; padding: 1px 5px; border-radius: 4px; background: var(--hover-fill); color: var(--dsw-alias-label-secondary); border: 1px solid var(--dsw-alias-border-l1); flex-shrink: 0; }
+    .node-subtext { font-family: var(--font-mono); font-size: 11px; color: var(--dsw-alias-label-tertiary); padding-left: 36px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .node-ports { display: flex; justify-content: space-between; position: absolute; top: 50%; left: -5px; right: -5px; pointer-events: none; transform: translateY(-50%); }
+    .node-port { width: 10px; height: 10px; border-radius: 50%; background: var(--port-fill); border: 2px solid var(--dsw-alias-border-l2); pointer-events: auto; }
+
+    /* 缩放胶囊 & MiniMap & 添加分类浮层 */
+    .zoom-capsule { position: absolute; left: 16px; bottom: 46px; height: 32px; padding: 0 4px; background: var(--glass-bg); backdrop-filter: blur(16px); border: 1px solid var(--dsw-alias-border-l1); border-radius: 8px; display: flex; align-items: center; gap: 2px; z-index: 15; box-shadow: var(--shadow-card); }
+    .zoom-btn { width: 24px; height: 24px; border-radius: 4px; border: none; background: transparent; color: var(--dsw-alias-label-secondary); cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 12px; }
+    .zoom-btn:hover { background: var(--hover-fill); color: var(--dsw-alias-label-primary); }
+    .zoom-text { font-size: 11px; font-family: var(--font-mono); padding: 0 6px; color: var(--dsw-alias-label-secondary); }
+
+    .minimap-card { position: absolute; right: 16px; bottom: 46px; width: 160px; height: 100px; background: var(--glass-bg); backdrop-filter: blur(16px); border: 1px solid var(--dsw-alias-border-l1); border-radius: 10px; padding: 6px; z-index: 15; box-shadow: var(--shadow-card); }
+    .minimap-canvas { width: 100%; height: 100%; position: relative; background: var(--minimap-bg); border-radius: 6px; overflow: hidden; }
+    .minimap-node { position: absolute; background: color-mix(in srgb, var(--dsw-alias-label-tertiary) 55%, transparent); border-radius: 2px; }
+    .minimap-viewport-box { position: absolute; border: 1px solid var(--dsw-alias-state-business-primary); background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 12%, transparent); border-radius: 3px; top: 10px; left: 10px; width: 130px; height: 68px; }
+
+    .add-node-menu { position: absolute; top: 70px; left: 20px; width: 200px; background: var(--glass-bg); backdrop-filter: blur(16px) saturate(140%); border: 1px solid var(--dsw-alias-border-l2); border-radius: 10px; box-shadow: var(--shadow-glass); padding: 6px; z-index: 18; }
+    .menu-category-title { font-size: 10px; font-weight: 600; color: var(--dsw-alias-label-tertiary); padding: 4px 8px 2px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .menu-item { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-radius: 6px; color: var(--dsw-alias-label-secondary); font-size: 12px; cursor: pointer; }
+    .menu-item:hover { background: var(--hover-fill); color: var(--dsw-alias-label-primary); }
+    .menu-dot { width: 7px; height: 7px; border-radius: 50%; background: #888; flex-shrink: 0; }
+
+    /* 底部日志栏 */
+    .canvas-footer { height: 34px; padding: 0 16px; background: var(--glass-bg); backdrop-filter: blur(16px); border-top: 1px solid var(--dsw-alias-border-l1); display: flex; align-items: center; justify-content: space-between; font-size: 11px; z-index: 20; }
+    .footer-log { color: var(--dsw-alias-label-secondary); display: flex; align-items: center; gap: 6px; font-family: var(--font-mono); }
+    .footer-status { display: flex; align-items: center; gap: 6px; color: var(--dsw-alias-state-warn-primary); font-weight: 500; }
+    .status-dot-amber { width: 7px; height: 7px; border-radius: 50%; background: var(--dsw-alias-state-warn-primary); box-shadow: 0 0 8px var(--dsw-alias-state-warn-primary); animation: blink 1.4s infinite ease-in-out; }
+    @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+    /* 2. 玻璃分隔条 (6px) */
+    .splitter-bar { width: 6px; cursor: col-resize; background: var(--hover-fill); border-left: 1px solid var(--dsw-alias-border-l1); border-right: 1px solid var(--dsw-alias-border-l1); display: flex; align-items: center; justify-content: center; position: relative; z-index: 30; transition: background 0.15s; }
+    .splitter-bar:hover, .splitter-bar.is-dragging { background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 30%, transparent); }
+    .splitter-handle { width: 3px; height: 36px; border-radius: 2px; background: var(--splitter-handle); }
+
+    /* 3. 右侧属性面板 (~420px, 圆角 14px) */
+    .prop-panel { width: 420px; min-width: 380px; max-width: 600px; background: var(--glass-bg); backdrop-filter: blur(16px) saturate(140%); border-left: 1px solid var(--dsw-alias-border-l1); border-radius: 14px 0 0 14px; box-shadow: var(--shadow-glass); display: flex; flex-direction: column; z-index: 25; overflow: hidden; }
+    .prop-header { height: 52px; padding: 0 16px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--dsw-alias-border-l1); box-shadow: 0 1px 0 var(--hover-fill) inset; }
+    .prop-title-group { display: flex; align-items: center; gap: 8px; }
+    .prop-title { font-size: 13px; font-weight: 600; color: var(--dsw-alias-label-primary); }
+    .badge-type-llm { font-size: 10px; padding: 2px 6px; border-radius: 4px; background: var(--tint-bg); color: var(--tint-text); border: 1px solid var(--tint-border); font-weight: 600; }
+
+    .prop-body { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+    .form-group { display: flex; flex-direction: column; gap: 6px; }
+    .form-label { font-size: 12px; font-weight: 500; color: var(--dsw-alias-label-secondary); display: flex; justify-content: space-between; align-items: center; }
+    .form-label-extra { font-size: 11px; color: var(--dsw-alias-label-tertiary); font-family: var(--font-mono); }
+
+    .form-input, .form-select, .form-textarea { width: 100%; background: var(--dsw-alias-bg-layer-2); border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; color: var(--dsw-alias-label-primary); padding: 7px 10px; font-size: 12px; font-family: var(--font-sans); outline: none; transition: border-color 0.15s, background 0.2s ease; }
+    .form-input:focus, .form-select:focus, .form-textarea:focus { border-color: var(--dsw-alias-state-business-primary); }
+    .form-input[readonly] { background: var(--hover-fill); color: var(--dsw-alias-label-tertiary); cursor: not-allowed; font-family: var(--font-mono); }
+    .form-textarea { font-family: var(--font-mono); font-size: 11.5px; line-height: 1.45; resize: vertical; min-height: 84px; }
+
+    .slider-row { display: flex; align-items: center; gap: 10px; }
+    .form-slider { flex: 1; accent-color: var(--dsw-alias-state-business-primary); cursor: pointer; }
+    .slider-val { font-family: var(--font-mono); font-size: 11px; color: var(--dsw-alias-label-secondary); width: 28px; text-align: right; }
+
+    .output-box { background: var(--output-bg); border: 1px solid var(--dsw-alias-border-l1); border-radius: 8px; padding: 10px; font-family: var(--font-mono); font-size: 11px; color: var(--output-text); line-height: 1.45; max-height: 130px; overflow-y: auto; white-space: pre; transition: background 0.2s ease; }
+    .prop-footer { padding: 12px 16px; border-top: 1px solid var(--dsw-alias-border-l1); display: flex; justify-content: flex-end; gap: 8px; }
+
+    /* 页面末尾设计规范说明面板 */
+    .spec-details-panel { margin: 12px 16px 24px; background: var(--dsw-alias-bg-layer-1); border: 1px solid var(--dsw-alias-border-l2); border-radius: 10px; padding: 12px 16px; font-size: 12px; color: var(--dsw-alias-label-secondary); }
+    .spec-details-panel summary { cursor: pointer; font-weight: 600; color: var(--dsw-alias-label-primary); outline: none; padding: 4px 0; }
+    .spec-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 11.5px; }
+    .spec-table th, .spec-table td { border: 1px solid var(--dsw-alias-border-l1); padding: 6px 10px; text-align: left; }
+    .spec-table th { background: var(--hover-fill); color: var(--dsw-alias-label-primary); }
+    .spec-code { font-family: var(--font-mono); color: var(--tint-text); }
+  </style>
+</head>
+<body data-ds-dark-theme>
+
+  <!-- 工作流工作台主体 -->
+  <div class="studio-app" id="studioRoot">
+
+    <!-- 1. 中部画布区 -->
+    <div class="canvas-panel" id="canvasPanel">
+
+      <!-- 顶部玻璃工具栏 -->
+      <div class="canvas-toolbar">
+        <div class="toolbar-left">
+          <div class="app-title">⚡ 工作流工作台</div>
+          <span class="mode-badge">Dify/Coze 模式</span>
+          <select class="workflow-select">
+            <option>智能工单分流与解答 (当前)</option>
+            <option>多 Agent 竞品深度分析流水线</option>
+            <option>自动化 Git PR 审计与回测</option>
+          </select>
+        </div>
+        <div class="toolbar-right">
+          <button class="btn btn-secondary">➕ 添加节点 ▾</button>
+          <button class="btn btn-secondary">📋 JSON DSL</button>
+          <button class="btn btn-primary">▶ 运行工作流</button>
+          <button class="btn btn-icon" id="themeToggle" title="切换浅色 / 深色主题">☀️</button>
+          <button class="btn btn-icon" title="关闭">✕</button>
+        </div>
+      </div>
+
+      <!-- 画布视口 -->
+      <div class="canvas-viewport" id="canvasViewport">
+
+        <!-- 添加节点分类浮层 (静态高保真展示) -->
+        <div class="add-node-menu">
+          <div class="menu-category-title">逻辑控制</div>
+          <div class="menu-item"><span class="menu-dot" style="background:#61666b;"></span>开始/结束 (Start/End)</div>
+          <div class="menu-item"><span class="menu-dot" style="background:#f59e0b;"></span>分支条件 (If / Else)</div>
+          <div class="menu-category-title">AI 能力</div>
+          <div class="menu-item"><span class="menu-dot" style="background:#4176e6;"></span>大模型推理 (LLM)</div>
+          <div class="menu-item"><span class="menu-dot" style="background:#06b6d4;"></span>子 Agent 委托 (Subagent)</div>
+          <div class="menu-category-title">转换处理</div>
+          <div class="menu-item"><span class="menu-dot" style="background:#ec4899;"></span>文本模版 (Template)</div>
+          <div class="menu-item"><span class="menu-dot" style="background:#8b5cf6;"></span>代码执行 (Code JS/Py)</div>
+        </div>
+
+        <!-- 贝塞尔连线 SVG -->
+        <svg class="svg-layer">
+          <!-- 1: start -> llm -->
+          <path d="M 270 185 C 310 185, 310 185, 350 185" class="edge-line" />
+          <!-- 2: llm -> if_else -->
+          <path d="M 590 185 C 630 185, 630 185, 670 185" class="edge-line" />
+          <!-- 3: if_else -> subagent [True] -->
+          <path d="M 910 165 C 950 165, 950 110, 990 110" class="edge-line active" />
+          <!-- 4: if_else -> template [False] -->
+          <path d="M 910 205 C 950 205, 950 290, 990 290" class="edge-line" />
+          <!-- 5: subagent -> end -->
+          <path d="M 1230 110 C 1270 110, 1270 175, 1310 175" class="edge-line active" />
+          <!-- 6: template -> end -->
+          <path d="M 1230 290 C 1270 290, 1270 195, 1310 195" class="edge-line" />
+        </svg>
+
+        <!-- 分支连线文字标记 -->
+        <div class="edge-badge badge-true" style="left: 948px; top: 132px;">true (VIP)</div>
+        <div class="edge-badge badge-false" style="left: 948px; top: 252px;">false (普通)</div>
+
+        <!-- 节点 1: Start (Completed) -->
+        <div class="flow-node state-completed" style="left: 30px; top: 155px; --node-tag-color: var(--dsw-node-start-end);">
+          <div class="node-header">
+            <div class="node-title-group">
+              <div class="node-chip">🏁</div>
+              <span class="node-name">接收工单输入</span>
+            </div>
+            <span class="node-badge">START</span>
+          </div>
+          <div class="node-subtext">input.ticket_payload</div>
+          <div class="node-ports"><span class="node-port"></span><span class="node-port"></span></div>
+        </div>
+
+        <!-- 节点 2: LLM (Completed & Selected) -->
+        <div class="flow-node state-completed is-selected" style="left: 350px; top: 155px; --node-tag-color: var(--dsw-node-llm);">
+          <div class="node-header">
+            <div class="node-title-group">
+              <div class="node-chip">🤖</div>
+              <span class="node-name">意图与严重度分析</span>
+            </div>
+            <span class="node-badge">LLM</span>
+          </div>
+          <div class="node-subtext">model: deepseek-chat</div>
+          <div class="node-ports"><span class="node-port"></span><span class="node-port"></span></div>
+        </div>
+
+        <!-- 节点 3: If/Else (Completed) -->
+        <div class="flow-node state-completed" style="left: 670px; top: 155px; --node-tag-color: var(--dsw-node-if-else);">
+          <div class="node-header">
+            <div class="node-title-group">
+              <div class="node-chip">🔀</div>
+              <span class="node-name">是否 VIP 紧急工单</span>
+            </div>
+            <span class="node-badge">IF_ELSE</span>
+          </div>
+          <div class="node-subtext">expr: is_vip && severity=='P0'</div>
+          <div class="node-ports"><span class="node-port"></span><span class="node-port"></span></div>
+        </div>
+
+        <!-- 节点 4: Subagent (Running) -->
+        <div class="flow-node state-running" style="left: 990px; top: 80px; --node-tag-color: var(--dsw-node-subagent);">
+          <div class="node-header">
+            <div class="node-title-group">
+              <div class="node-chip">🧠</div>
+              <span class="node-name">VIP 专家诊断 Agent</span>
+            </div>
+            <span class="node-badge">SUBAGENT</span>
+          </div>
+          <div class="node-subtext">agent: vip-triage-expert</div>
+          <div class="node-ports"><span class="node-port"></span><span class="node-port"></span></div>
+        </div>
+
+        <!-- 节点 5: Template (Pending) -->
+        <div class="flow-node state-pending" style="left: 990px; top: 260px; --node-tag-color: var(--dsw-node-template);">
+          <div class="node-header">
+            <div class="node-title-group">
+              <div class="node-chip">📝</div>
+              <span class="node-name">标准工单回复模版</span>
+            </div>
+            <span class="node-badge">TEMPLATE</span>
+          </div>
+          <div class="node-subtext">tpl: standard_auto_reply.md</div>
+          <div class="node-ports"><span class="node-port"></span><span class="node-port"></span></div>
+        </div>
+
+        <!-- 节点 6: End (Pending) -->
+        <div class="flow-node state-pending" style="left: 1310px; top: 155px; --node-tag-color: var(--dsw-node-start-end);">
+          <div class="node-header">
+            <div class="node-title-group">
+              <div class="node-chip">🛑</div>
+              <span class="node-name">工单处理完毕</span>
+            </div>
+            <span class="node-badge">END</span>
+          </div>
+          <div class="node-subtext">output: final_response</div>
+          <div class="node-ports"><span class="node-port"></span><span class="node-port"></span></div>
+        </div>
+
+        <!-- 左下缩放胶囊 -->
+        <div class="zoom-capsule">
+          <button class="zoom-btn">+</button>
+          <span class="zoom-text">100%</span>
+          <button class="zoom-btn">−</button>
+          <button class="zoom-btn" title="适应画布">⤓</button>
+        </div>
+
+        <!-- 右下 MiniMap -->
+        <div class="minimap-card">
+          <div class="minimap-canvas">
+            <div class="minimap-node" style="left:6px; top:16px; width:22px; height:8px;"></div>
+            <div class="minimap-node" style="left:34px; top:16px; width:22px; height:8px; background:#4176e6;"></div>
+            <div class="minimap-node" style="left:64px; top:16px; width:22px; height:8px;"></div>
+            <div class="minimap-node" style="left:94px; top:8px; width:22px; height:8px; background:#06b6d4;"></div>
+            <div class="minimap-node" style="left:94px; top:26px; width:22px; height:8px; opacity:0.4;"></div>
+            <div class="minimap-node" style="left:124px; top:16px; width:22px; height:8px; opacity:0.4;"></div>
+            <div class="minimap-viewport-box"></div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- 底部状态日志栏 -->
+      <div class="canvas-footer">
+        <div class="footer-log">
+          状态日志: 14:32:05 - 节点 [VIP 专家诊断 Agent] 执行中... (耗时 1,820ms)
+        </div>
+        <div class="footer-status">
+          <span class="status-dot-amber"></span>
+          <span>执行中...</span>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- 2. 玻璃分隔条 -->
+    <div class="splitter-bar" id="splitterBar" title="拖拽调整面板宽度">
+      <div class="splitter-handle"></div>
+    </div>
+
+    <!-- 3. 右侧属性面板 -->
+    <div class="prop-panel" id="propPanel">
+
+      <div class="prop-header">
+        <div class="prop-title-group">
+          <span class="prop-title">🔧 节点属性配置</span>
+          <span class="badge-type-llm">LLM</span>
+        </div>
+        <button class="btn btn-secondary" style="height: 26px; padding: 0 8px; font-size: 11px;">重置</button>
+      </div>
+
+      <div class="prop-body">
+        <div class="form-group">
+          <label class="form-label">节点 ID <span class="form-label-extra">只读</span></label>
+          <input type="text" class="form-input" value="intent_llm" readonly />
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">节点名称</label>
+          <input type="text" class="form-input" value="意图与严重度分析" />
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">推理模型</label>
+          <select class="form-select">
+            <option selected>● deepseek-chat (DeepSeek-V3)</option>
+            <option>● deepseek-reasoner (DeepSeek-R1)</option>
+            <option>● gpt-4o</option>
+            <option>● claude-3-5-sonnet</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">System 提示词</label>
+          <textarea class="form-textarea" rows="4">你是有10年经验的企业工单分流专家。请分析输入工单内容，提取核心诉求与紧急等级。
+必须以标准 JSON 结构输出：
+{
+  "intent": "bug_report | billing | consultation",
+  "severity": "P0 | P1 | P2 | P3",
+  "is_vip": boolean,
+  "summary": "简短摘要"
+}</textarea>
+        </div>
+
+        <div class="form-group">
+          <div class="form-label">
+            <span>Temperature (发散度)</span>
+            <span class="slider-val" id="tempVal">0.7</span>
+          </div>
+          <div class="slider-row">
+            <input type="range" class="form-slider" min="0" max="1" step="0.1" value="0.7" oninput="document.getElementById('tempVal').innerText=this.value" />
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">上一次运行输出 <span class="form-label-extra">output.json</span></label>
+          <div class="output-box">{
+  "status": "success",
+  "durationMs": 642,
+  "executedAt": "2025-05-18T14:32:04.112Z",
+  "text": "{\"intent\": \"bug_report\", \"severity\": \"P0\", \"is_vip\": true}"
+}</div>
+        </div>
+      </div>
+
+      <div class="prop-footer">
+        <button class="btn btn-secondary" style="width: 100%;">🔍 试跑单节点</button>
+      </div>
+
+    </div>
+
+  </div>
+
+  <!-- 分隔条拖拽 JS + 主题切换 JS -->
+  <script>
+    const splitter = document.getElementById('splitterBar');
+    const propPanel = document.getElementById('propPanel');
+    let isDragging = false;
+    splitter.addEventListener('mousedown', (e) => { isDragging = true; splitter.classList.add('is-dragging'); document.body.style.cursor = 'col-resize'; });
+    window.addEventListener('mousemove', (e) => {
+      if (!isDragging) return;
+      const newWidth = window.innerWidth - e.clientX;
+      if (newWidth >= 380 && newWidth <= 720) propPanel.style.width = newWidth + 'px';
+    });
+    window.addEventListener('mouseup', () => { isDragging = false; splitter.classList.remove('is-dragging'); document.body.style.cursor = 'default'; });
+
+    // 浅色/深色切换：机制对齐 DSH 官方 —— body[data-ds-dark-theme]
+    const themeToggle = document.getElementById('themeToggle');
+    function applyTheme(mode) {
+      const dark = mode === 'dark';
+      if (dark) document.body.setAttribute('data-ds-dark-theme', '');
+      else document.body.removeAttribute('data-ds-dark-theme');
+      themeToggle.textContent = dark ? '☀️' : '🌙';
+      try { localStorage.setItem('mockup-theme', mode); } catch {}
+    }
+    let savedTheme = 'dark';
+    try { savedTheme = localStorage.getItem('mockup-theme') || 'dark'; } catch {}
+    applyTheme(savedTheme);
+    themeToggle.addEventListener('click', () => {
+      applyTheme(document.body.hasAttribute('data-ds-dark-theme') ? 'light' : 'dark');
+    });
+  </script>
+
+  <!-- 页面末尾：设计规格标注（供后续开发子 agent） -->
+  <details class="spec-details-panel">
+    <summary>📐 设计规格标注 (供后续开发子 agent 查阅)</summary>
+    <div style="margin-top: 8px; line-height: 1.6;">
+      <p><strong>1. 真实 DSH 设计令牌 (dsh-client-ui-theme 官方提取值，双主题)</strong></p>
+      <table class="spec-table">
+        <tr><th>Token 变量</th><th>浅色 (body 默认)</th><th>深色 (body[data-ds-dark-theme])</th><th>用途</th></tr>
+        <tr><td class="spec-code">--dsw-alias-bg-base</td><td>#ffffff</td><td>#151517</td><td>全局最底色</td></tr>
+        <tr><td class="spec-code">--dsw-alias-bg-layer-1 / layer-2</td><td>#ffffff / #ffffff</td><td>#232324 / #2c2c2e</td><td>一级底板 / 二级卡片·输入框</td></tr>
+        <tr><td class="spec-code">--dsw-alias-label-primary / secondary / tertiary</td><td>#0f1115 / #61666b / #81858c</td><td>#f9fafb / #cfd3d6 / #adb2b8</td><td>三级文字层级</td></tr>
+        <tr><td class="spec-code">--dsw-alias-border-l1 / l2</td><td>rgba(0,0,0,.04) / rgba(0,0,0,.10)</td><td>rgba(255,255,255,.06) / rgba(255,255,255,.12)</td><td>微弱描边 / 常规边框</td></tr>
+        <tr><td class="spec-code">--dsw-alias-state-business-primary</td><td>#4176e6 (deepseek-500)</td><td>#679efe (deepseek-400)</td><td>DeepSeek 品牌蓝：主操作/运行/聚焦/选中</td></tr>
+        <tr><td class="spec-code">--dsw-alias-state-success / error / warn</td><td colspan="2" style="text-align:center;">success #22c55e；warn #f59e0b；error 浅 #dc2626 / 深 #f25a5a</td><td>节点四态 / 日志</td></tr>
+        <tr><td class="spec-code">interactive-bg-hover (派生)</td><td>rgba(38,49,72,.06)</td><td>rgba(255,255,255,.08)</td><td>悬停叠加 / 玻璃面 / chip 底</td></tr>
+      </table>
+
+      <p style="margin-top: 12px;"><strong>2. 主题机制（必须照抄）</strong></p>
+      <ul style="padding-left: 20px; margin-top: 4px;">
+        <li>浅色 = CSS 变量写在 <span class="spec-code">body {}</span> 默认层；深色整体覆盖在 <span class="spec-code">body[data-ds-dark-theme] {}</span>。与 DSH 官方主题插件同一开关属性。</li>
+        <li>工具栏 ☀️/🌙 按钮 toggle 该属性并 localStorage 记忆（键 mockup-theme）；真实实现应改挂 DSH 全局主题设置，跟随宿主自动切换。</li>
+        <li>禁止硬编码黑白灰——所有叠加色（点阵、连线、悬停、阴影、端口、代码块）都必须走上方语义变量。</li>
+      </ul>
+
+      <p style="margin-top: 12px;"><strong>3. 节点类型扩展调色板 (工作流专属，双主题共用)</strong></p>
+      <ul style="padding-left: 20px; margin-top: 4px;">
+        <li><span class="spec-code">start / end</span>: #61666b (中性端点)</li>
+        <li><span class="spec-code">llm</span>: 品牌蓝 (随主题取 business-primary 官方值)</li>
+        <li><span class="spec-code">subagent</span>: #06b6d4 (青色子 Agent 协作)</li>
+        <li><span class="spec-code">if_else</span>: #f59e0b (琥珀条件分支)</li>
+        <li><span class="spec-code">template</span>: #ec4899 (粉色文本渲染)</li>
+        <li><span class="spec-code">code</span>: #8b5cf6 (紫色脚本计算)</li>
+      </ul>
+
+      <p style="margin-top: 12px;"><strong>4. 布局与圆角规范</strong></p>
+      <ul style="padding-left: 20px; margin-top: 4px;">
+        <li>三栏规则：中部画布默认 ~62% 弹性伸缩；右侧属性面板 420px (min 380px，支持拖拽记忆)。</li>
+        <li>状态表现：running (品牌蓝描边+脉冲)；completed (绿描边)；failed (红描边)；pending (opacity:0.68 无描边)。</li>
+        <li>阶梯圆角：控件/按钮 8px；节点卡片 10px；大面板 14px。</li>
+      </ul>
+    </div>
+  </details>
+
+</body>
+</html>

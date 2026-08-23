@@ -1,0 +1,345 @@
+/**
+ * Workflow Studio design tokens + structural takeover CSS (M1).
+ *
+ * 来源约束（docs/design/workflow-studio-design.md §3 / §10.15）：
+ * - 双主题机制照抄 DSH 官方主题插件：浅色变量在 body 默认层，
+ *   深色整体覆盖在 body[data-ds-dark-theme] 层。本文件不自带开关。
+ * - 生产 CSS 禁用 color-mix()：一切叠加色使用下方显式 rgba
+ *   （含 mockup 已预计算的 --tint-* 三件套），lightningcss 不做转译。
+ * - 禁止硬编码黑白灰与任何已否决的靛紫色族（§3.2）；组件规则只引用语义变量。
+ */
+
+/* ============ 插件扩展调色板（节点类型识别色，双主题共用，§3.5 扩展声明） ============ */
+:root {
+  --dsw-node-start-end: #61666b;
+  --dsw-node-llm: #4176e6; /* 仅作扩展调色板记录；组件内一律取 --dsw-alias-state-business-primary */
+  --dsw-node-subagent: #06b6d4;
+  --dsw-node-if-else: #f59e0b;
+  --dsw-node-template: #ec4899;
+  --dsw-node-code: #8b5cf6;
+  --font-sans: -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+/* ============ 浅色主题（DSH 官方 body 默认层，逐字照抄 mockup） ============ */
+body {
+  --dsw-alias-bg-base: #ffffff;
+  --dsw-alias-bg-layer-1: #ffffff;
+  --dsw-alias-bg-layer-2: #ffffff;
+  --dsw-alias-label-primary: #0f1115;
+  --dsw-alias-label-secondary: #61666b;
+  --dsw-alias-label-tertiary: #81858c;
+  --dsw-alias-border-l1: rgba(0, 0, 0, 0.04);
+  --dsw-alias-border-l2: rgba(0, 0, 0, 0.10);
+  --dsw-alias-state-business-primary: #4176e6;
+  --dsw-alias-state-success-primary: #22c55e;
+  --dsw-alias-state-error-primary: #dc2626;
+  --dsw-alias-state-warn-primary: #f59e0b;
+
+  /* 语义派生变量（全部显式 rgba / 预计算值，无 color-mix） */
+  --hover-fill: rgba(38, 49, 72, 0.06);        /* interactive-bg-hover */
+  --glass-bg: rgba(255, 255, 255, 0.78);
+  --dot-color: rgba(15, 17, 21, 0.05);
+  --edge-stroke: rgba(15, 17, 21, 0.28);
+  --port-fill: #ffffff;
+  --minimap-bg: rgba(15, 17, 21, 0.04);
+  --output-bg: #f6f7f8;
+  --output-text: #16794d;
+  --shadow-card: 0 4px 16px rgba(16, 24, 40, 0.08);
+  --shadow-glass: 0 12px 32px rgba(16, 24, 40, 0.10);
+  --splitter-handle: rgba(0, 0, 0, 0.22);
+
+  /* 品牌蓝染色徽章（--tint-* 三件套，预计算自 business-primary） */
+  --tint-bg: rgba(65, 118, 230, 0.10);
+  --tint-text: #2f5fc4;
+  --tint-border: rgba(65, 118, 230, 0.30);
+
+  /* 品牌蓝上的前景（按钮文字/图标），双主题同值（mockup .btn-primary color） */
+  --on-brand: #ffffff;
+}
+
+/* ============ 深色主题（DSH 官方 body[data-ds-dark-theme] 覆盖层，逐字照抄 mockup） ============ */
+body[data-ds-dark-theme] {
+  --dsw-alias-bg-base: #151517;
+  --dsw-alias-bg-layer-1: #232324;
+  --dsw-alias-bg-layer-2: #2c2c2e;
+  --dsw-alias-label-primary: #f9fafb;
+  --dsw-alias-label-secondary: #cfd3d6;
+  --dsw-alias-label-tertiary: #adb2b8;
+  --dsw-alias-border-l1: rgba(255, 255, 255, 0.06);
+  --dsw-alias-border-l2: rgba(255, 255, 255, 0.12);
+  --dsw-alias-state-business-primary: #679efe;
+  --dsw-alias-state-success-primary: #22c55e;
+  --dsw-alias-state-error-primary: #f25a5a;
+  --dsw-alias-state-warn-primary: #f59e0b;
+
+  --hover-fill: rgba(255, 255, 255, 0.08);
+  --glass-bg: rgba(35, 35, 36, 0.78);
+  --dot-color: rgba(255, 255, 255, 0.04);
+  --edge-stroke: rgba(255, 255, 255, 0.22);
+  --port-fill: #151517;
+  --minimap-bg: rgba(0, 0, 0, 0.25);
+  --output-bg: #1a1a1c;
+  --output-text: #98c379;
+  --shadow-card: 0 4px 16px rgba(0, 0, 0, 0.30);
+  --shadow-glass: 0 12px 32px rgba(0, 0, 0, 0.38);
+  --splitter-handle: rgba(255, 255, 255, 0.25);
+
+  --tint-bg: rgba(103, 158, 254, 0.16);
+  --tint-text: #a5c4ff;
+  --tint-border: rgba(103, 158, 254, 0.35);
+  --on-brand: #ffffff;
+}
+
+/* ==================================================================
+ * 结构规则（M1 布局接管）
+ * 依据 §10.4：容器挂 centerCol 内部尾部；对话隐藏走 html 属性级 CSS，
+ * 带 :not 排他守卫防止与 task-board / ssh 面板互殴。
+ * ================================================================ */
+
+[data-pane='conversation'],
+[class*='centerCol'] {
+  position: relative;
+}
+
+/* 视图容器：默认隐藏，仅当 html 激活属性存在且无互斥面板时显示 */
+[data-dsh-workflow-view] {
+  position: absolute;
+  inset: 0;
+  display: none;
+  flex-direction: column;
+  z-index: 60;
+  overflow: hidden;
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+  font-family: var(--font-sans);
+}
+
+/* 激活态：排他守卫（task-board / ssh 任一激活时让位） */
+html[data-dsh-workflow-active]:not([data-dsh-taskboard-active]):not([data-dsh-ssh-active]) [data-dsh-workflow-view] {
+  display: flex;
+  animation: dsw-view-enter 320ms cubic-bezier(.32, .72, 0, 1);
+}
+
+/* 隐藏宿主对话内容（属性级 + !important，参照 task-board board.module.css 同类规则） */
+html[data-dsh-workflow-active]:not([data-dsh-taskboard-active]):not([data-dsh-ssh-active]) [data-pane='conversation'] > :not([data-dsh-workflow-view]),
+html[data-dsh-workflow-active]:not([data-dsh-taskboard-active]):not([data-dsh-ssh-active]) [class*='centerCol'] > :not([data-dsh-workflow-view]) {
+  display: none !important;
+}
+
+@keyframes dsw-view-enter {
+  from { opacity: 0; transform: translateX(24px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* ---- 顶部工具栏（玻璃质感克制版，§3.3） ---- */
+.dsw-view-toolbar {
+  flex: none;
+  height: 52px;
+  padding: 0 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: var(--glass-bg);
+  backdrop-filter: blur(16px) saturate(140%);
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+  box-shadow: 0 1px 0 var(--hover-fill) inset;
+}
+
+.dsw-toolbar-left,
+.dsw-toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.dsw-app-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+  white-space: nowrap;
+}
+
+.dsw-mode-badge {
+  font-size: 11px;
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: var(--tint-bg);
+  color: var(--tint-text);
+  border: 1px solid var(--tint-border);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.dsw-toolbar-hint {
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dsw-btn-icon {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-secondary);
+  border: 1px solid var(--dsw-alias-border-l2);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.dsw-btn-icon:hover {
+  color: var(--dsw-alias-label-primary);
+  background: var(--hover-fill);
+}
+
+/* ---- 主区：画布 | 分隔条 | 属性面板 ---- */
+.dsw-view-main {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: row;
+  overflow: hidden;
+}
+
+.dsw-view-canvas {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+  overflow: hidden;
+  background-color: var(--dsw-alias-bg-base);
+  background-image: radial-gradient(var(--dot-color) 1.2px, transparent 1.2px);
+  background-size: 22px 22px;
+}
+
+/* 过渡期垫片：旧版 WorkflowCanvas 内联了硬编码浅色底与其自带点阵（M2 迁移时移除），
+ * 此处以语义变量覆盖之，避免深色主题下出现死白画布。 */
+[data-dsh-workflow-view] .dsh-workflow-canvas-container {
+  background: transparent !important;
+}
+
+[data-dsh-workflow-view] .react-flow__background {
+  display: none;
+}
+
+/* 6px 玻璃分隔条。
+ * 取舍说明（§10.4 二选一）：分隔条作为容器内部的普通子元素放在画布与右面板之间
+ * （即右面板的左缘、视觉上贴画布右侧）。这样整个三栏结构完全位于本插件自有容器内，
+ * 不向宿主 React 协调树注入任何兄弟节点，也不依赖宿主列的几何假设。 */
+.dsw-splitter {
+  flex: none;
+  width: 6px;
+  cursor: col-resize;
+  background: var(--hover-fill);
+  border-left: 1px solid var(--dsw-alias-border-l1);
+  border-right: 1px solid var(--dsw-alias-border-l1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease;
+  touch-action: none;
+}
+
+.dsw-splitter:hover,
+.dsw-splitter.is-dragging {
+  background: var(--tint-border);
+}
+
+.dsw-splitter-handle {
+  width: 3px;
+  height: 36px;
+  border-radius: 2px;
+  background: var(--splitter-handle);
+  pointer-events: none;
+}
+
+body.dsw-col-resizing {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
+
+/* 右侧属性面板（玻璃卡片，圆角阶梯 14px，宽度由 JS 夹紧 380–600） */
+.dsw-prop-panel {
+  flex: none;
+  min-width: 380px;
+  max-width: 600px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--glass-bg);
+  backdrop-filter: blur(16px) saturate(140%);
+  border-left: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 14px 0 0 14px;
+  box-shadow: var(--shadow-glass);
+}
+
+.dsw-prop-header {
+  flex: none;
+  height: 52px;
+  padding: 0 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+  box-shadow: 0 1px 0 var(--hover-fill) inset;
+}
+
+.dsw-prop-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+}
+
+.dsw-prop-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+}
+
+.dsw-prop-placeholder {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* ---- 底部日志栏占位（M3 接入执行日志；执行态色统一品牌蓝，§10 P2-17） ---- */
+.dsw-view-footer {
+  flex: none;
+  height: 34px;
+  padding: 0 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 11px;
+  background: var(--glass-bg);
+  backdrop-filter: blur(16px);
+  border-top: 1px solid var(--dsw-alias-border-l1);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.dsw-footer-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--dsw-alias-state-business-primary);
+  font-weight: 500;
+}
+
+/* ---- 动效降级（§3.4） ---- */
+@media (prefers-reduced-motion: reduce) {
+  [data-dsh-workflow-view],
+  [data-dsh-workflow-view] *,
+  .dsw-splitter,
+  .dsw-btn-icon {
+    animation: none !important;
+    transition: none !important;
+  }
+}

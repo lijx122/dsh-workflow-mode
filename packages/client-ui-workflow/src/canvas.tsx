@@ -1,3 +1,9 @@
+/**
+ * @deprecated 自 M2 起废弃（§10.12 迁移清单）：画布已由 src/canvas-parts/studio-canvas.tsx
+ *           接管（registry 节点、自绘缩放胶囊/MiniMap、--xy-* 主题覆盖）。
+ *           本文件仅为 M1 过渡构建保留，禁止新增引用。
+
+ */
 import React, { useMemo } from "react";
 import {
   ReactFlow,

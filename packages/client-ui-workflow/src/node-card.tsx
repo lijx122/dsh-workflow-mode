@@ -1,7 +1,13 @@
+/**
+ * @deprecated 自 M2 起废弃（§10.12 迁移清单）：节点卡职责已由 src/nodes/<type>/card.tsx
+ *           （共享壳 src/nodes/shared/card-shell.tsx）接管。本文件仅为 M1 过渡构建保留，
+ *           禁止新增引用；新代码一律使用 nodes/ 体系。M2 完成时按 §10.12 删除。
+
+ */
 import React from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import type { NodeType } from "@dsh-workflow/schema";
-import type { NodeStatus, WorkflowNodeData } from "./types.js";
+import { normalizeStatus, type NodeStatus, type WorkflowNodeData } from "./types.js";
 
 /**
  * 节点类型图标映射
@@ -90,7 +96,7 @@ export const STATUS_STYLES: Record<
 export const WorkflowNodeCard: React.FC<NodeProps> = ({ id, data }) => {
   const nodeData = data as unknown as WorkflowNodeData;
   const node = nodeData.node;
-  const status: NodeStatus = nodeData.status || "pending";
+  const status: NodeStatus = normalizeStatus(nodeData.status);
   const nodeType = node.type;
   const icon = NODE_TYPE_ICONS[nodeType] ?? "⚙️";
   const styles = STATUS_STYLES[status] ?? STATUS_STYLES.pending;

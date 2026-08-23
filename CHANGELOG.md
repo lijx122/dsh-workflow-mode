@@ -1,5 +1,33 @@
 # 变更记录
 
+## v0.2.0-workflow-studio（2026-08-23）
+
+### 新增
+- **工作流工作台（Workflow Studio）**：Dify/Coze 式可视化 DAG 编辑器，作为 DSH Web 客户端插件随「工作流模式」预设自动启用（PresetGate 门控：非 workflow 会话零侵入）。
+  - 三栏布局：宿主侧边栏不动 | 中部画布（初始宽按 §10.5 公式解析，6px 玻璃分隔条可拖拽，localStorage v2 记忆+视口重钳制）| 右侧属性面板（380–600px）。
+  - **节点系统**（M2）：12 类 DSL 节点四件套（default/card/panel/types），NODE_REGISTRY 统一注册；类型识别色条+图标 chip+徽章+等宽副标题差异化卡片；六态运行视觉（pending/running/completed/failed/skipped/waiting_human）；自绘缩放胶囊与 MiniMap 替代 React Flow 原生控件；block-selector 三分组加节点浮层。
+  - **执行编排器**（M3）：RunOrchestrator 拓扑串行调度、onError stop/continue/route、死路消除 skipped 传播、AbortSignal ✕ 语义、iteration 内联子队列循环；code 节点沙箱（静态扫描拒 constructor/__proto__/eval + null 原型 inputs + 冻结白名单 shadow）；LLM/Subagent 经真实 DSH 会话驱动（exempt 会话豁免门控，try/finally 配对）；human 断点 waiting_human 两态 + approveHuman 端到端恢复闭环。
+  - **工作流库**（M4）：localStorage CRUD + 模版播种（仅一次）+ 坏值 .bak 自愈 + 配额静默降级 + 导入导出（强制过 validateWorkflow）。
+- 双主题令牌层：逐字采用 dsh-client-ui-theme 官方浅/深色值（品牌蓝 #4176e6/#679efe），跟随宿主 data-ds-dark-theme 自动切换；生产 CSS 禁用 color-mix。
+- 设计文档 v2.1（docs/design/workflow-studio-design.md，含 §10 对抗审查裁决 21 条）与高保真基准图 docs/design/workflow-studio-mockup.html。
+
+### 修复
+- 修复 persona 提示词字面 {{#nodeId.prop}} 触发 DSH 模板变量校验失败导致会话首步报错（改写为自然语言描述）。
+- 修复客户端插件 apply 幂等守卫缺卸载释放导致的 HMR 后无法重挂（claim/release 经 ctx.effect 成对注册）。
+- 修复 Studio 容器接管时 createRoot 第二根叠加风险（__dswWorkflowRoot 根标记协议）。
+
+### 质量
+- 全流程多子代理对抗性审查：设计评审 REVISE→修订；四模块编码各自经独立对抗审查（累计 9 轮审查，拦截 P0×7/P1×11，含 effect 回调泄漏、双根叠加、外点丢改名、沙箱逃逸、方言漂移、approveHuman 断链），全部以复验 APPROVE 收口。
+- 测试：client-ui-workflow 包 192 用例全绿（registry/布局公式/门控豁免/沙箱攻击面/端到端断点恢复等）；全仓 tsc 0 错误；pnpm -r build exit 0。
+
+### 已知问题
+- TECH_DEBT D6-D12（模型选择 API 缺失降级只读、http_request 移出本期、code 沙箱非 Worker 隔离残余 import/Promise 面、iteration 无并行、temperature/workspace 引擎不消费、生产画布估算布线、MiniMap window 近似视口框）。
+
+### 回滚方式
+- `git checkout <v0.1.0-dev 锚点>`；服务器回滚：`cd /opt/dsh-workflow-mode && git checkout 0479576 && pnpm -r build && cp config/agent-presets/workflow/* /root/.dsh/.agent-presets/workflow/ && pm2 restart dsh-web`
+
+# 变更记录
+
 ## v0.1.0-dev（2026-08-16）
 
 ### 新增

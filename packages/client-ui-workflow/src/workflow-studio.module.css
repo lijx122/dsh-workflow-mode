@@ -3,32 +3,10 @@
  * Scoped by data attributes to seamlessly integrate into DSH Web GUI.
  */
 
-/* --- Center-column takeover --- */
-[data-pane='conversation'],
-[class*='centerCol'] {
-  position: relative;
-}
-
-[data-dsh-workflow-view] {
-  position: absolute;
-  inset: 0;
-  display: none;
-  z-index: 60;
-  background: var(--dsw-alias-bg-base, #121316);
-  flex-direction: column;
-  height: 100%;
-  width: 100%;
-  overflow: hidden;
-}
-
-html[data-dsh-workflow-active]:not([data-dsh-taskboard-active]):not([data-dsh-ssh-active]) [data-dsh-workflow-view] {
-  display: flex;
-}
-
-html[data-dsh-workflow-active]:not([data-dsh-taskboard-active]):not([data-dsh-ssh-active]) [data-pane='conversation'] > :not([data-dsh-workflow-view]),
-html[data-dsh-workflow-active]:not([data-dsh-taskboard-active]):not([data-dsh-ssh-active]) [class*='centerCol'] > :not([data-dsh-workflow-view]) {
-  display: none !important;
-}
+/*
+ * Center-column takeover 规则已迁移至 src/styles/tokens.css（§10.4/§10.15：
+ * 属性级隐藏 CSS 与双主题令牌同层维护，避免双份事实来源）。
+ */
 
 /* --- Sidebar entry row --- */
 .entry {
@@ -54,8 +32,8 @@ html[data-dsh-workflow-active]:not([data-dsh-taskboard-active]):not([data-dsh-ss
 }
 
 .entry[data-active] {
-  background: var(--dsw-specific-sidebar-nav-item-active, rgba(99, 102, 241, 0.15));
-  color: var(--dsw-alias-label-primary, #6366f1);
+  background: var(--tint-bg, rgba(65, 118, 230, 0.10));
+  color: var(--tint-text, #2f5fc4);
   font-weight: 600;
 }
 
@@ -133,9 +111,9 @@ html[data-dsh-workflow-active]:not([data-dsh-taskboard-active]):not([data-dsh-ss
   font-size: 11px;
   font-weight: 600;
   border-radius: 999px;
-  background: rgba(99, 102, 241, 0.2);
-  color: #818cf8;
-  border: 1px solid rgba(99, 102, 241, 0.3);
+  background: var(--tint-bg, rgba(65, 118, 230, 0.10));
+  color: var(--tint-text, #2f5fc4);
+  border: 1px solid var(--tint-border, rgba(65, 118, 230, 0.30));
 }
 
 .select {
@@ -156,8 +134,8 @@ html[data-dsh-workflow-active]:not([data-dsh-taskboard-active]):not([data-dsh-ss
   padding: 6px 14px;
   font-size: 13px;
   font-weight: 600;
-  color: #ffffff;
-  background: #4f46e5;
+  color: var(--on-brand);
+  background: var(--dsw-alias-state-business-primary, #4176e6);
   border: none;
   border-radius: 6px;
   cursor: pointer;
@@ -166,7 +144,8 @@ html[data-dsh-workflow-active]:not([data-dsh-taskboard-active]):not([data-dsh-ss
 }
 
 .btnPrimary:hover:not(:disabled) {
-  background: #4338ca;
+  /* §3.2：品牌蓝 hover 用亮度提升，不引入自造色值 */
+  filter: brightness(1.08);
 }
 
 .btnPrimary:disabled {
@@ -202,7 +181,7 @@ html[data-dsh-workflow-active]:not([data-dsh-taskboard-active]):not([data-dsh-ss
   padding: 5px 12px;
   font-size: 12.5px;
   font-weight: 500;
-  color: #fff;
+  color: var(--on-brand);
   background: #ef4444;
   border: none;
   border-radius: 6px;

@@ -1,0 +1,480 @@
+/**
+ * Workflow Studio 节点系统样式（M2）。
+ *
+ * 规范来源：docs/design/workflow-studio-design.md
+ * - §3.2/§3.3/§3.4：全部颜色走语义令牌变量；玻璃质感克制版；圆角阶梯 8/10。
+ * - §4.3 / §10.8：pending(.68 无描边)/running(蓝描边+脉冲)/completed(绿)/failed(红)
+ *   /skipped(opacity .4 灰)/waiting_human(品牌蓝虚线 + 👤 角标)。
+ * - §10.7：端口/handle 用百分比动态定位，禁止钉死 y=90/x=96 像素常量。
+ * - §10.15：生产禁用 color-mix()——叠加色一律显式预计算 rgba。
+ * - §3.5 扩展调色板声明（双主题共用）：merge #059669、set_variable #ca8a04、
+ *   iteration #0891b2 为 start-end/if-else/subagent/template/code 六色之外按需补充的
+ *   中性变体；human 取 var(--tint-text)（品牌蓝派生令牌）以呼应 waiting_human 视觉。
+ */
+
+/* ============ 节点卡片（240px 宽 · 高自适应 · 左 3px 类型色条） ============ */
+
+.card {
+  position: relative;
+  box-sizing: border-box;
+  width: 240px;
+  background: var(--dsw-alias-bg-layer-2);
+  border-radius: 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  box-shadow: var(--shadow-card);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  cursor: grab;
+  font-family: var(--font-sans);
+  transition: box-shadow 0.2s ease, border-color 0.2s ease, opacity 0.2s ease;
+}
+
+.card::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  border-top-left-radius: 10px;
+  border-bottom-left-radius: 10px;
+  background: var(--node-tag-color, var(--dsw-node-start-end));
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.titleGroup {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+  min-width: 0;
+}
+
+.chip {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  background: var(--hover-fill);
+  color: var(--node-tag-color, inherit);
+  flex-shrink: 0;
+}
+
+.name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.badge {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--hover-fill);
+  color: var(--dsw-alias-label-secondary);
+  border: 1px solid var(--dsw-alias-border-l1);
+  flex-shrink: 0;
+}
+
+.subtext {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+  padding-left: 36px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.errText {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--dsw-alias-state-error-primary);
+  padding-left: 36px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---- 端口旁小字标签（T/F），随 offsetRatio 内联定位 ---- */
+.portLabel {
+  position: absolute;
+  right: 9px;
+  transform: translateY(-50%);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-tertiary);
+  pointer-events: none;
+}
+
+/* ---- 端口 / handle（React Flow 结构类全局覆盖，尺寸走令牌） ---- */
+.card :global(.react-flow__handle) {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--port-fill);
+  border: 2px solid var(--dsw-alias-border-l2);
+  min-height: 0;
+  min-width: 0;
+}
+
+.card :global(.react-flow__handle:hover) {
+  border-color: var(--dsw-alias-state-business-primary);
+}
+
+/* ============ 六态视觉（§4.3 / §10.8） ============ */
+
+.statusPending {
+  opacity: 0.68;
+}
+
+.statusRunning {
+  border-color: var(--dsw-alias-state-business-primary);
+  animation: pulseGlow 2s infinite ease-in-out;
+}
+
+@keyframes pulseGlow {
+  0%, 100% { box-shadow: 0 0 0 2px var(--dsw-alias-state-business-primary), 0 0 14px rgba(65, 118, 230, 0.35); }
+  50% { box-shadow: 0 0 0 2.5px var(--dsw-alias-state-business-primary), 0 0 22px rgba(103, 158, 254, 0.55); }
+}
+
+.statusCompleted {
+  border-color: var(--dsw-alias-state-success-primary);
+}
+
+.statusFailed {
+  border-color: var(--dsw-alias-state-error-primary);
+}
+
+.statusSkipped {
+  opacity: 0.4;
+  border-color: var(--dsw-alias-border-l2);
+}
+
+.statusWaitingHuman {
+  border: 1px dashed var(--dsw-alias-state-business-primary);
+}
+
+.waitingBadge {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  background: var(--tint-bg);
+  border: 1px solid var(--tint-border);
+  color: var(--tint-text);
+}
+
+.selected {
+  border-color: var(--dsw-alias-state-business-primary);
+  box-shadow: 0 0 0 2px var(--dsw-alias-state-business-primary),
+    0 8px 24px rgba(65, 118, 230, 0.28);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .statusRunning,
+  .card,
+  .edgeDash {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* ============ 分支边 true/false 徽章（预计算 rgba，无 color-mix） ============ */
+
+.edgeBadge {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  pointer-events: all;
+  white-space: nowrap;
+  z-index: 3;
+}
+
+.edgeBadgeTrue {
+  background: rgba(34, 197, 94, 0.14);
+  color: var(--dsw-alias-state-success-primary);
+  border: 1px solid rgba(34, 197, 94, 0.35);
+}
+
+.edgeBadgeFalse {
+  background: rgba(245, 158, 11, 0.14);
+  color: var(--dsw-alias-state-warn-primary);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+}
+
+.edgeActive {
+  stroke: var(--dsw-alias-state-business-primary) !important;
+  filter: drop-shadow(0 0 3px rgba(65, 118, 230, 0.5));
+}
+
+/* ============ 添加节点浮层（三分组 · 类型色点 · 玻璃拟态） ============ */
+
+.selector {
+  position: absolute;
+  width: 208px;
+  max-height: 320px;
+  overflow-y: auto;
+  background: var(--glass-bg);
+  backdrop-filter: blur(16px) saturate(140%);
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  box-shadow: var(--shadow-glass);
+  padding: 6px;
+  z-index: 18;
+}
+
+.groupTitle {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-tertiary);
+  padding: 4px 8px 2px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  width: 100%;
+  text-align: left;
+  font-family: inherit;
+  transition: background 0.15s ease;
+}
+
+.item:hover {
+  background: var(--hover-fill);
+  color: var(--dsw-alias-label-primary);
+}
+
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* ============ 属性面板表单件（layer-2 底 / border-l2 / 圆角 8 / 聚焦品牌蓝） ============ */
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-secondary);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.labelExtra {
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+  font-family: var(--font-mono);
+}
+
+.input,
+.textarea,
+.select {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--dsw-alias-bg-layer-2);
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  color: var(--dsw-alias-label-primary);
+  padding: 7px 10px;
+  font-size: 12px;
+  font-family: var(--font-sans);
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.input:focus,
+.textarea:focus,
+.select:focus {
+  border-color: var(--dsw-alias-state-business-primary);
+}
+
+.input[readonly] {
+  background: var(--hover-fill);
+  color: var(--dsw-alias-label-tertiary);
+  cursor: not-allowed;
+  font-family: var(--font-mono);
+}
+
+.textarea {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.45;
+  resize: vertical;
+  min-height: 84px;
+}
+
+.sliderRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.slider {
+  flex: 1;
+  accent-color: var(--dsw-alias-state-business-primary);
+  cursor: pointer;
+}
+
+.sliderVal {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--dsw-alias-label-secondary);
+  width: 28px;
+  text-align: right;
+}
+
+.outputBox {
+  background: var(--output-bg);
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 8px;
+  padding: 10px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--output-text);
+  line-height: 1.45;
+  max-height: 130px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.hint {
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* ============ 自绘缩放胶囊 / MiniMap 玻璃卡（替代原生 Controls/MiniMap） ============ */
+
+.zoomCapsule {
+  position: absolute;
+  left: 16px;
+  bottom: 46px;
+  height: 32px;
+  padding: 0 4px;
+  background: var(--glass-bg);
+  backdrop-filter: blur(16px);
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  z-index: 15;
+  box-shadow: var(--shadow-card);
+}
+
+.zoomBtn {
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  line-height: 1;
+  font-family: var(--font-mono);
+}
+
+.zoomBtn:hover {
+  background: var(--hover-fill);
+  color: var(--dsw-alias-label-primary);
+}
+
+.zoomText {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  padding: 0 6px;
+  color: var(--dsw-alias-label-secondary);
+  min-width: 38px;
+  text-align: center;
+}
+
+.minimapCard {
+  position: absolute;
+  right: 16px;
+  bottom: 46px;
+  width: 160px;
+  height: 100px;
+  background: var(--glass-bg);
+  backdrop-filter: blur(16px);
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 10px;
+  padding: 6px;
+  z-index: 15;
+  box-shadow: var(--shadow-card);
+}
+
+.minimapCanvas {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background: var(--minimap-bg);
+  border-radius: 6px;
+  overflow: hidden;
+  cursor: crosshair;
+}
+
+.minimapNode {
+  position: absolute;
+  background: rgba(129, 133, 140, 0.55);
+  border-radius: 2px;
+}
+
+.minimapViewport {
+  position: absolute;
+  border: 1px solid var(--dsw-alias-state-business-primary);
+  background: rgba(65, 118, 230, 0.12);
+  border-radius: 3px;
+  cursor: grab;
+}

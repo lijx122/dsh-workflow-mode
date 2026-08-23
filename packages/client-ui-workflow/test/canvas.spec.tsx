@@ -77,8 +77,9 @@ describe("WorkflowCanvas Component", () => {
     const processNode = screen.getByTestId("workflow-node-process_data");
     const humanNode = screen.getByTestId("workflow-node-human_review");
 
-    expect(startNode).toHaveClass("status-success");
-    expect(startNode).toHaveAttribute("data-status", "success");
+    // §10.8：success 字样一律归一化为 completed
+    expect(startNode).toHaveClass("status-completed");
+    expect(startNode).toHaveAttribute("data-status", "completed");
 
     expect(fetchNode).toHaveClass("status-running");
     expect(fetchNode).toHaveAttribute("data-status", "running");
@@ -103,7 +104,8 @@ describe("WorkflowCanvas Component", () => {
       <WorkflowCanvas dsl={sample8NodeDSL} nodeStates={updatedStates} />
     );
 
-    expect(screen.getByTestId("workflow-node-fetch_data")).toHaveClass("status-success");
+    // §10.8：输入 success 经 normalizeStatus 归一为 completed
+    expect(screen.getByTestId("workflow-node-fetch_data")).toHaveClass("status-completed");
     expect(screen.getByTestId("workflow-node-process_data")).toHaveClass("status-failed");
     expect(screen.getByTestId("workflow-node-human_review")).toHaveClass("status-waiting_human");
     expect(screen.getByTestId("workflow-node-subagent_exec")).toHaveClass("status-skipped");
