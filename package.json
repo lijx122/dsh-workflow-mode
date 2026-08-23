@@ -1,6 +1,20 @@
 {
   "name": "dsh-workflow-mode",
+  "version": "0.1.0-dev",
   "private": true,
+  "license": "MIT",
+  "description": "Workflow Mode preset for DeepSeek Harness — deterministic DAG workflows with Agent-authored JSON DSL and visual canvas",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lijx122/dsh-workflow-mode.git"
+  },
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "workflow",
+    "dag",
+    "agent-preset"
+  ],
   "scripts": {
     "build": "pnpm -r build",
     "test": "pnpm -r test"
