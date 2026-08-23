@@ -14,4 +14,5 @@ export type {
   RunResult,
   EngineOptions,
   HostServices,
+  RunExecutionOptions,
 } from "./engine.js";

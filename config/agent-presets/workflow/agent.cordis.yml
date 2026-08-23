@@ -1,0 +1,61 @@
+# ==============================================================================
+# 工作流模式 Preset Agent 配置文件
+# 待真实 DSH 环境联测
+# ==============================================================================
+# 平面约束说明：
+# - 本文件属于 AGENT-PLANE（智能体平面）组合配置
+# - 不新增 Host 服务；引擎与 Controller 置于 cordis:group 并使用 isolate.workflowEngine: true 隔离
+# - controller 纯模型工具注册至 host tools 目录，不 provide 根服务
+# ==============================================================================
+
+# ── identity（智能体平面） ───────────────────────────────────────────────────
+# preset 专属 persona，覆盖默认智能体身份定义
+- id: persona                                       # 智能体平面：身份描述组件
+  name: '@deepseek-ai/dsh-persona'
+  config:
+    text: >-
+      You are a workflow orchestration agent powered by the {{model}} model. Your working directory is {{cwd}}. You orchestrate, validate, run, and debug automated DAG workflows using tool-workflow-controller.
+
+- id: agent-instructions                            # 智能体平面：指令上限配置
+  name: '@deepseek-ai/dsh-agent-instructions'
+  config:
+    maxBytes: 65536
+
+# ── shell（宿主/智能体平面适配） ──────────────────────────────────────────────
+# Bash 与 PowerShell 按平台互斥禁用，执行器位于宿主平面，工具行位于智能体平面
+- id: tool-bash                                     # 智能体平面：Bash 工具行（Windows 禁用）
+  name: '@deepseek-ai/dsh-tool-bash'
+  disabled: !!js process.platform === 'win32'
+
+- id: tool-pwsh                                     # 智能体平面：PowerShell 工具行（非 Windows 禁用）
+  name: '@deepseek-ai/dsh-tool-pwsh'
+  disabled: !!js process.platform !== 'win32'
+
+# ── filesystem（宿主工具代理） ───────────────────────────────────────────────
+# 注册至宿主 tools 目录，fs 实际能力与沙箱策略保留在宿主平面
+- id: tool-fs                                       # 智能体平面：文件读写工具
+  name: '@deepseek-ai/dsh-tool-fs'
+
+- id: tool-fs-search                                # 智能体平面：文件搜索与 glob 工具
+  name: '@deepseek-ai/dsh-tool-fs-search'
+  config:
+    sampleOverCapGlobResults: false
+
+# ── human in the loop（宿主工具代理） ─────────────────────────────────────────
+# 人机协作审批断点交互通道
+- id: tool-ask-user                                 # 智能体平面：用户交互提问与审批工具
+  name: '@deepseek-ai/dsh-tool-ask-user'
+
+# ── workflow engine & controller（会话隔离组） ────────────────────────────────
+# 核心工作流执行器与 Controller 模型工具：使用 entry-local isolate 域隔离 workflowEngine
+- id: workflow-runtime                              # 智能体平面：工作流隔离组
+  name: cordis:group
+  group: true
+  isolate:
+    workflowEngine: true                            # 会话级隔离，防止双会话 realm 冲突
+  config:
+    # workflow-runner 包装 WorkflowController 并注册 tool-workflow-controller
+    - id: tool-workflow-controller                  # 智能体平面：工作流控制器模型工具（十一动作）
+      name: '@dsh-workflow/workflow-controller'
+      config:
+        workflowsDir: '.dsh/workflows'

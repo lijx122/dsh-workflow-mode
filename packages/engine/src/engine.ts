@@ -110,11 +110,11 @@ export interface NodeState {
   error?: string;
 }
 
-export type RunStatus = "success" | "failed" | "stopped";
+export type RunStatus = "running" | "waiting_human" | "success" | "failed" | "stopped";
 
 export interface RunResult {
   runId: string;
-  status: RunStatus;
+  status: "success" | "failed" | "stopped";
   nodeStates: Record<string, NodeState>;
   outputs: Record<string, NodeOutput>;
   events: RunEvent[];
@@ -134,6 +134,13 @@ export interface EngineOptions {
   host?: HostServices;
 }
 
+export interface RunExecutionOptions {
+  runId?: string;
+  onEvent?: (event: RunEvent) => void;
+  isTest?: boolean;
+  host?: HostServices;
+}
+
 // ================= 校验错误 =================
 
 export class WorkflowValidationError extends Error {
@@ -148,10 +155,26 @@ export class WorkflowValidationError extends Error {
 
 // ================= 运行内部状态 =================
 
+interface PendingHuman {
+  resolve: (res: { decision: string; inputs?: Record<string, JsonValue> }) => void;
+  reject: (err: Error) => void;
+  prompt: string;
+  inputs?: Record<string, JsonValue>;
+}
+
 interface RunControl {
+  runId: string;
+  workflowName: string;
+  status: RunStatus;
+  startedAt: number;
+  finishedAt?: number;
   aborted: boolean;
   stopRequested: boolean;
   controller: AbortController;
+  nodeStates: Record<string, NodeState>;
+  outputs: Record<string, NodeOutput>;
+  events: RunEvent[];
+  pendingHumans: Map<string, PendingHuman>;
 }
 
 /**
@@ -183,6 +206,7 @@ export class WorkflowEngine {
   private readonly defaultNodeTimeoutMs?: number;
   private readonly host: ExecutionContext["host"];
   private readonly runs = new Map<string, RunControl>();
+  private readonly completedRuns = new Map<string, RunControl>();
 
   constructor(
     executors: Record<NodeType, NodeExecutor>,
@@ -218,6 +242,7 @@ export class WorkflowEngine {
   async run(
     dsl: WorkflowDSL,
     inputs: Record<string, JsonValue>,
+    runOptions?: RunExecutionOptions,
   ): Promise<RunResult> {
     // ---- 快照隔离：执行图固定为该 run 启动时的深拷贝 ----
     const snapshot = structuredClone(dsl) as WorkflowDSL;
@@ -232,9 +257,29 @@ export class WorkflowEngine {
     const defaultNodeTimeoutMs = this.defaultNodeTimeoutMs;
 
     // ---- 运行初始化 ----
-    const runId = crypto.randomUUID();
+    const runId = runOptions?.runId ?? crypto.randomUUID();
     const controller = new AbortController();
-    const control: RunControl = { aborted: false, stopRequested: false, controller };
+    const startedAt = Date.now();
+    const nodeStates: Record<string, NodeState> = {};
+    for (const n of snapshot.nodes) {
+      nodeStates[n.id] = { status: "pending" };
+    }
+    const outputs: Record<string, NodeOutput> = {};
+    const events: RunEvent[] = [];
+
+    const control: RunControl = {
+      runId,
+      workflowName: snapshot.name,
+      status: "running",
+      startedAt,
+      aborted: false,
+      stopRequested: false,
+      controller,
+      nodeStates,
+      outputs,
+      events,
+      pendingHumans: new Map(),
+    };
     this.runs.set(runId, control);
 
     const nodes = new Map(snapshot.nodes.map((n) => [n.id, n]));
@@ -257,14 +302,6 @@ export class WorkflowEngine {
     /** 至少一条有效入边已完成的节点集合（OR-Join 触发依据） */
     const validReceived = new Set<string>();
 
-    // 节点状态
-    const nodeStates: Record<string, NodeState> = {};
-    for (const n of snapshot.nodes) {
-      nodeStates[n.id] = { status: "pending" };
-    }
-
-    const outputs: Record<string, NodeOutput> = {};
-    const events: RunEvent[] = [];
     const varCtx = new VariableContext();
     const startNode = snapshot.nodes.find((n) => n.type === "start");
     if (startNode) {
@@ -288,7 +325,9 @@ export class WorkflowEngine {
       nodeId?: string,
       data?: Record<string, JsonValue>,
     ) => {
-      events.push({ timestamp: Date.now(), runId, type, nodeId, data });
+      const ev: RunEvent = { timestamp: Date.now(), runId, type, nodeId, data };
+      events.push(ev);
+      runOptions?.onEvent?.(ev);
     };
     emit("run_start");
 
@@ -313,16 +352,67 @@ export class WorkflowEngine {
       }
     }
 
-    const makeCtx = (nodeId: string): ExecutionContext => ({
-      runId,
-      nodeId,
-      signal: controller.signal,
-      log: (ev: RunEvent) => {
-        events.push({ ...ev, runId, timestamp: Date.now() });
-      },
-      varCtx,
-      host: this.host,
-    });
+    const effectiveHost = {
+      ...this.host,
+      ...runOptions?.host,
+    };
+
+    const makeCtx = (nodeId: string): ExecutionContext => {
+      let runAskUser = effectiveHost.askUser;
+      if (runAskUser) {
+        const originalAskUser = runAskUser;
+        runAskUser = (args: { prompt: string; inputs?: Record<string, JsonValue> }) => {
+          nodeStates[nodeId].status = "waiting_human";
+          control.status = "waiting_human";
+          emit("human_wait", nodeId, { prompt: args.prompt, ...(args.inputs ? { inputs: args.inputs } : {}) });
+
+          return new Promise<{ decision: string; inputs?: Record<string, JsonValue> }>((resolve, reject) => {
+            let settled = false;
+            const safeResolve = (res: { decision: string; inputs?: Record<string, JsonValue> }) => {
+              if (settled) return;
+              settled = true;
+              control.pendingHumans.delete(nodeId);
+              if (control.pendingHumans.size === 0 && control.status === "waiting_human") {
+                control.status = "running";
+              }
+              nodeStates[nodeId].status = "running";
+              resolve(res);
+            };
+            const safeReject = (err: Error) => {
+              if (settled) return;
+              settled = true;
+              control.pendingHumans.delete(nodeId);
+              reject(err);
+            };
+
+            control.pendingHumans.set(nodeId, {
+              resolve: safeResolve,
+              reject: safeReject,
+              prompt: args.prompt,
+              inputs: args.inputs,
+            });
+
+            originalAskUser(args).then(safeResolve, safeReject);
+          });
+        };
+      }
+
+      return {
+        runId,
+        nodeId,
+        signal: controller.signal,
+        log: (ev: RunEvent) => {
+          const fullEv = { ...ev, runId, timestamp: Date.now() };
+          events.push(fullEv);
+          runOptions?.onEvent?.(fullEv);
+        },
+        varCtx,
+        host: {
+          ...effectiveHost,
+          askUser: runAskUser,
+        },
+      };
+    };
 
     const delay = (ms: number) =>
       new Promise<void>((resolve) => setTimeout(resolve, Math.max(0, ms)));
@@ -542,11 +632,11 @@ export class WorkflowEngine {
     await done;
 
     // ---- 清理 ----
-    this.runs.delete(runId);
+    control.finishedAt = Date.now();
     emit("run_finish");
 
     // ---- 计算最终状态 ----
-    let status: RunStatus;
+    let status: "success" | "failed" | "stopped";
     if (control.stopRequested) {
       // 仅用户 stop() 才置 stopped；超时熔断按失败收尾（failed）
       status = "stopped";
@@ -555,6 +645,14 @@ export class WorkflowEngine {
         (s) => s.status === "failed",
       );
       status = hasFailed ? "failed" : "success";
+    }
+    control.status = status;
+
+    this.runs.delete(runId);
+    this.completedRuns.set(runId, control);
+    if (this.completedRuns.size > 200) {
+      const oldestKey = this.completedRuns.keys().next().value;
+      if (oldestKey) this.completedRuns.delete(oldestKey);
     }
 
     return { runId, status, nodeStates, outputs, events };
@@ -571,7 +669,89 @@ export class WorkflowEngine {
     if (!state) return false;
     state.aborted = true;
     state.stopRequested = true;
+    state.status = "stopped";
     state.controller.abort();
+    for (const pending of state.pendingHumans.values()) {
+      pending.reject(new Error("Run stopped by user request"));
+    }
+    state.pendingHumans.clear();
     return true;
+  }
+
+  /**
+   * 查询指定 runId 的状态。
+   */
+  status(runId: string): {
+    runId: string;
+    workflowName: string;
+    status: RunStatus;
+    startedAt: number;
+    finishedAt?: number;
+    nodes: Array<{ id: string; status: NodeStatus; startedAt?: number; finishedAt?: number; error?: string }>;
+    nodeStates: Record<string, NodeState>;
+  } | undefined {
+    const control = this.runs.get(runId) ?? this.completedRuns.get(runId);
+    if (!control) return undefined;
+    return {
+      runId: control.runId,
+      workflowName: control.workflowName,
+      status: control.status,
+      startedAt: control.startedAt,
+      finishedAt: control.finishedAt,
+      nodes: Object.entries(control.nodeStates).map(([id, s]) => ({
+        id,
+        status: s.status,
+        startedAt: s.startedAt,
+        finishedAt: s.finishedAt,
+        error: s.error,
+      })),
+      nodeStates: control.nodeStates,
+    };
+  }
+
+  /**
+   * 向挂起的 human 节点提交审批决策。
+   */
+  approve(
+    runId: string,
+    nodeId: string,
+    decision: "approved" | "rejected" | string,
+    inputs?: Record<string, JsonValue>,
+  ): { nodeId: string; decision: string; resumed: boolean } {
+    const control = this.runs.get(runId);
+    if (!control) {
+      return { nodeId, decision, resumed: false };
+    }
+    const pending = control.pendingHumans.get(nodeId);
+    if (!pending) {
+      return { nodeId, decision, resumed: false };
+    }
+    control.pendingHumans.delete(nodeId);
+    if (control.pendingHumans.size === 0 && control.status === "waiting_human") {
+      control.status = "running";
+    }
+    control.nodeStates[nodeId].status = "running";
+    pending.resolve({ decision, inputs });
+    return { nodeId, decision, resumed: true };
+  }
+
+  /**
+   * 从内存态恢复挂起的 run。
+   */
+  resume(runId: string): {
+    resumed: boolean;
+    nodes: Array<{ id: string; status: NodeStatus }>;
+  } {
+    const control = this.runs.get(runId);
+    if (!control) {
+      return { resumed: false, nodes: [] };
+    }
+    return {
+      resumed: true,
+      nodes: Object.entries(control.nodeStates).map(([id, s]) => ({
+        id,
+        status: s.status,
+      })),
+    };
   }
 }

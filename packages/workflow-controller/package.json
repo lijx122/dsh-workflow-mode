@@ -1,0 +1,20 @@
+{
+  "name": "@dsh-workflow/workflow-controller",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./lib/index.js",
+  "types": "./lib/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.11"
+  },
+  "dependencies": {
+    "@dsh-workflow/engine": "workspace:*",
+    "@dsh-workflow/schema": "workspace:*"
+  }
+}

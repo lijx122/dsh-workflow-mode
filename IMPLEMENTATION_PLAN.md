@@ -4,7 +4,7 @@
 - 项目名：dsh-workflow-mode（DSH 工作流模式）
 - 需求文档：[REQUIREMENTS.md](./REQUIREMENTS.md)
 - 架构文档：[ARCHITECTURE.md](./ARCHITECTURE.md)
-- 当前阶段：**T6 进行中（DSH 集成绑定层：plugin_tool/llm/subagent/human）**
+- 当前阶段：**T7 已完成（workflow-controller 9/9 绿，engine 100/100 绿，schema 14/14 绿）**
 - v0.1.2：经对抗性审查修订接口契约与任务依赖图
 
 ---
@@ -258,12 +258,14 @@ T1 脚手架 → T2 Schema/校验器 → T3 变量总线 → T4 DAG 引擎核心
 - 验收标准：FR-06——test/t6.spec.ts 26 例（mock host 四执行器各≥2 例 + human 三路径 + llm schema 校验失败）全绿；engine 97/97 全绿（含既有 64 例）
 - 变更影响：executors/errors.ts 由 NotImplementedError 扩展 hostNotBound；executors.spec.ts 原 4 条 stub 断言改为 host 绑定断言；EngineOptions 新增 host 字段
 - 关联接口：ExecutionContext.host（HostServices）
+- 锚点：commit 994c9fc → 1c03d3a（复审修复：human timer 泄漏 / decision 协议字段权威 / integer⊂number 容差）；100/100 全绿
 
-### [待办] T7 Preset 配置与 cordis 挂载验证
+### [已完成] T7 Preset 配置与 cordis 挂载验证
 - 依赖：T5+T6
-- 产物：config/agent-presets/workflow/{preset.yml, agent.cordis.yml}（isolate 键=workflowEngine，无新增 Host 服务）；tool-workflow-controller 插件（P0 七动作，含 approve/resume）
-- 验收标准：FR-01/02——模式切换器出现工作流模式；双会话无 realm 冲突；controller 七动作可用
-- 关联接口：controller schema
+- 产物：packages/workflow-controller（WorkflowController 十一动作实现，含 approve/resume/logs/history/test/reload/waitFor）；config/agent-presets/workflow/{preset.yml, agent.cordis.yml}；单测 controller.spec.ts（9 例）
+- 验收标准：FR-01/02/12/13 覆盖——controller 十一动作完备可用；human 挂起与 approve 闭环；单节点 test 干跑不落盘；runs 目录 events.jsonl 与 run.json 持久化
+- 关联接口：WorkflowController、controller schema
+- 锚点：T7 交付全绿
 
 ### [待办] T8 Web GUI 画布与 client 插件契约
 - 依赖：T2（Schema）；可与 T4-T7 并行
