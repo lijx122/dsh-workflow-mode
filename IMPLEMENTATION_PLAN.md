@@ -4,7 +4,7 @@
 - 项目名：dsh-workflow-mode（DSH 工作流模式）
 - 需求文档：[REQUIREMENTS.md](./REQUIREMENTS.md)
 - 架构文档：[ARCHITECTURE.md](./ARCHITECTURE.md)
-- 当前阶段：**T12 完成（文件热重载：chokidar watcher → 校验 → 原子换版/last-good 回退）**
+- 当前阶段：**T11 已完成（运行日志保留策略清理器全绿）——待办 T10 扩展节点集 / T9 端到端示例**
 - v0.1.2：经对抗性审查修订接口契约与任务依赖图
 
 ---
@@ -280,11 +280,11 @@ T1 脚手架 → T2 Schema/校验器 → T3 变量总线 → T4 DAG 引擎核心
 - 验收标准：FR-11 全部单测通过；error_fallback 注入故障按 route 改道；webhook 无效鉴权 401、超 1MB body 413、过期时间戳 401；sub_workflow 经 ExecutionContext.callStack 校验深度 ≤3 且拒绝环路
 - 关联接口：NodeType（P1 枚举）、OnError("route")
 
-### [待办] T11 运行日志持久化与调试接口
+### [已完成] T11 运行日志持久化与调试接口
 - 依赖：T7
-- 产物：run 三件套落盘 + 保留策略清理器；controller 增加 logs/history/test/reload
-- 验收标准：FR-12（含 105 次历史 run 清理断言）；FR-13 四条 Mock 断言全部脚本化通过
-- 关联接口：controller schema（十一动作全集）、RunEvent、RunCheckpoint
+- 产物：run 三件套落盘 + 保留策略清理器（packages/workflow-controller/src/retention.ts）；controller 完整支持 logs/history/test/reload 与 run 结束/启动异步惰性清理
+- 验收标准：FR-12 达成（105 次历史 run 清理保留最新 100 个、maxAgeDays 过期清理、损坏 run.json 容错不抛）；FR-13 四条 Mock 断言全部脚本化通过；单测 18/18 绿，全仓 143/143 绿
+- 关联接口：RetentionCleaner、RetentionPolicy、WorkflowControllerOptions.retention、RunEvent、RunCheckpoint
 
 ### [已完成] T12 文件热重载
 - 依赖：T2+T4+T8

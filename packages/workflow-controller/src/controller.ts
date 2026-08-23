@@ -20,12 +20,14 @@ import {
 } from "@dsh-workflow/engine";
 
 import { WorkflowFileWatcher } from "./watcher.js";
+import { RetentionCleaner, type RetentionPolicy } from "./retention.js";
 
 export interface WorkflowControllerOptions {
   workflowsDir?: string;
   watcher?: boolean;
   debounceMs?: number;
   onRegistryChange?: (file: string) => void;
+  retention?: RetentionPolicy;
 }
 
 export interface RunHistorySummary {
@@ -86,12 +88,22 @@ export class WorkflowController {
     }
   >();
   readonly fileWatcher?: WorkflowFileWatcher;
+  readonly retentionCleaner: RetentionCleaner;
   onRegistryChange?: (file: string) => void;
 
   constructor(engine: WorkflowEngine, opts: WorkflowControllerOptions = {}) {
     this.engine = engine;
     this.workflowsDir = opts.workflowsDir ?? path.resolve(".dsh/workflows");
     this.onRegistryChange = opts.onRegistryChange;
+    this.retentionCleaner = new RetentionCleaner(
+      path.join(this.workflowsDir, "runs"),
+      opts.retention,
+    );
+
+    // 引擎启动时惰性清理（不阻塞主流程）
+    void this.retentionCleaner.clean().catch((err) => {
+      console.warn("Retention cleaner error on startup:", err);
+    });
 
     if (opts.watcher) {
       this.fileWatcher = new WorkflowFileWatcher({
@@ -301,6 +313,9 @@ export class WorkflowController {
       })
       .finally(() => {
         this.activeRuns.delete(runId);
+        void this.retentionCleaner.clean().catch((err) => {
+          console.warn("Retention cleaner error after run:", err);
+        });
       });
 
     this.activeRuns.set(runId, { promise, runDir, workflowName });
