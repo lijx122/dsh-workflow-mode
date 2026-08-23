@@ -20,6 +20,16 @@ import {
 import { createSidebarEntry, type SidebarEntryController } from './sidebar-entry.js';
 import { WorkflowCanvas } from './canvas.js';
 
+/** 临时诊断（Director 集成调试）：阶段标记写到 <html data-wf-stage>，定位后移除。 */
+function markStage(stage: string): void {
+  try {
+    if (typeof document === 'undefined') return;
+    const prev = document.documentElement.getAttribute('data-wf-stage') ?? '';
+    document.documentElement.setAttribute('data-wf-stage', prev ? prev + ',' + stage : stage);
+  } catch { /* noop */ }
+}
+markStage('factory');
+
 /** 宿主服务依赖（PresetGate 订阅 sessions.list，§10 P0-14）。 */
 export const inject = ['sessions'];
 
@@ -52,6 +62,7 @@ export function apply(ctx: unknown): void {
     return;
   }
   if (!claimed) return;
+  markStage('claimed');
 
   try {
     const host = ctx as
@@ -65,9 +76,13 @@ export function apply(ctx: unknown): void {
       host.effect(() => releaseWorkflowApply, '@dsh-workflow/client-ui-workflow: apply claim');
     }
 
+    markStage('host-sessions:' + (host && (host as { sessions?: unknown }).sessions !== undefined ? 'yes' : 'no'));
+    markStage('ctx-keys:' + Object.keys((host ?? {}) as object).slice(0, 12).join('|'));
     const gate = createPresetGate(host?.sessions);
+    markStage('gate-created');
     const studio = mountStudio();
     const entry = createSidebarEntry(toggleWorkflowStudio);
+    markStage('entry-created');
 
     let unsubscribeGate: (() => void) | undefined;
     let unsubscribeOpen: (() => void) | undefined;
@@ -97,6 +112,7 @@ export function apply(ctx: unknown): void {
     const syncUi = (): void => {
       try {
         const snap = gate.getSnapshot();
+        markStage('gate-snap:' + String(snap.shouldShow) + ':' + String(snap.activeSessionId ?? 'none'));
         entry.setVisible(snap.shouldShow);
         entry.setActive(studio.isOpen());
         studio.handleGate(snap);
