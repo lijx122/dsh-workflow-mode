@@ -12,6 +12,9 @@
     "./client": {
       "types": "./lib/client.d.ts",
       "default": "./lib/client.js"
+    },
+    "./cordis-plugin": {
+      "default": "./lib/cordis-plugin.js"
     }
   },
   "scripts": {
@@ -19,6 +22,9 @@
     "test": "vitest run"
   },
   "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
     "client": {
       "platform": "web",
       "inject": [
@@ -27,7 +33,7 @@
       ]
     }
   },
-  "description": "DSH Web GUI Workflow Canvas client plugin (真实宿主联测待 T9/后续)",
+  "description": "DSH Web GUI Workflow Canvas client plugin",
   "dependencies": {
     "@dsh-workflow/schema": "workspace:*",
     "@xyflow/react": "^12.11.3",
@@ -40,7 +46,7 @@
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
     "jsdom": "^30.0.1",
-    "typescript": "^7.0.2",
+    "typescript": "^5.7.0",
     "vitest": "^4.1.11"
   }
 }
