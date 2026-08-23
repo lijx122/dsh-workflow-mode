@@ -26,6 +26,7 @@ function markStage(stage: string): void {
     if (typeof document === 'undefined') return;
     const prev = document.documentElement.getAttribute('data-wf-stage') ?? '';
     document.documentElement.setAttribute('data-wf-stage', prev ? prev + ',' + stage : stage);
+    document.title = '[wf]' + (prev ? prev + ',' + stage : stage);
   } catch { /* noop */ }
 }
 markStage('factory');
