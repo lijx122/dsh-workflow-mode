@@ -26,7 +26,13 @@ function markStage(stage: string): void {
     if (typeof document === 'undefined') return;
     const prev = document.documentElement.getAttribute('data-wf-stage') ?? '';
     document.documentElement.setAttribute('data-wf-stage', prev ? prev + ',' + stage : stage);
-    document.title = '[wf]' + (prev ? prev + ',' + stage : stage);
+    // 文本镜像：head 内追加可读节点（get_text 可读，且不会被宿主覆盖）。
+    const holder = document.getElementById('wf-stage-debug')
+      ?? document.createElement('div');
+    holder.id = 'wf-stage-debug';
+    holder.style.display = 'none';
+    holder.textContent = '[wf]' + (prev ? prev + ',' + stage : stage);
+    if (holder.parentElement !== document.head) document.head.appendChild(holder);
   } catch { /* noop */ }
 }
 markStage('factory');
