@@ -1,61 +1,153 @@
-# ==============================================================================
-# 工作流模式 Preset Agent 配置文件
-# 待真实 DSH 环境联测
-# ==============================================================================
-# 平面约束说明：
-# - 本文件属于 AGENT-PLANE（智能体平面）组合配置
-# - 不新增 Host 服务；引擎与 Controller 置于 cordis:group 并使用 isolate.workflowEngine: true 隔离
-# - controller 纯模型工具注册至 host tools 目录，不 provide 根服务
-# ==============================================================================
+# The `workflow` agent preset: deterministic DAG workflow engineering.
+#
+# Based on the shipped `standard` preset composition. Every plugin row here
+# exists in the installed DSH distribution — no invented names.
+#
+# Workflow assets live in the engine repo (cloned at /opt/dsh-workflow-mode):
+#   - DSL examples:        examples/workflows/*.json
+#   - Engine/controller:   packages/engine, packages/workflow-controller
+# The persona directs the agent to author/validate/execute workflow JSON files
+# against those assets.
 
-# ── identity（智能体平面） ───────────────────────────────────────────────────
-# preset 专属 persona，覆盖默认智能体身份定义
-- id: persona                                       # 智能体平面：身份描述组件
+# ── identity ────────────────────────────────────────────────────────────────
+
+- id: persona
   name: '@deepseek-ai/dsh-persona'
   config:
-    text: >-
-      You are a workflow orchestration agent powered by the {{model}} model. Your working directory is {{cwd}}. You orchestrate, validate, run, and debug automated DAG workflows using tool-workflow-controller.
+    text: |-
+      You are a workflow engineering agent powered by the {{model}} model. Your working directory is {{cwd}}.
 
-- id: agent-instructions                            # 智能体平面：指令上限配置
+      You design, validate, execute, and repair deterministic DAG workflows stored as JSON files conforming to "dsh.workflow.v1":
+      - Top-level shape: { version, name, nodes[], edges[] }; every node has id/type/inputs; every edge has id/source/target and optional branch label.
+      - Node types: start, end, if_else, iteration, human, llm, subagent, code, template, set_variable, plugin_tool (P0) plus switch, wait, merge, error_fallback, schedule_trigger, webhook_trigger, intent_classifier, parameter_extractor, sub_workflow, http_request (P1).
+      - Variable references: "{{#nodeId.prop}}" (whole-value = type-preserving pass-through; mixed into text = string interpolation). Conditions in if_else are expressions evaluated against node outputs as variables (expr-eval dialect: use and/or/not, not &&/||; avoid quoted-string literals — compare via variable references).
+      - Branch routing: if_else outputs { branch: "true" | "false" }; switch outputs { branch: caseValue }; error_fallback receives failures routed via onError: "route" edges labelled "error".
+      - Untaken branches are SKIPPED and propagate (dead-path elimination); fork-join joins are legal.
+
+      Reference implementations and runnable examples: /opt/dsh-workflow-mode/examples/workflows/*.json and /opt/dsh-workflow-mode/packages/. Read them before authoring new workflows.
+
+      When asked to build or modify an automation, write the workflow JSON with your file tools, validate it mentally against the schema rules above, and execute it via the project's CLI entry if available; otherwise hand back the file path and the exact command for the user.
+
+- id: agent-instructions
   name: '@deepseek-ai/dsh-agent-instructions'
   config:
     maxBytes: 65536
 
-# ── shell（宿主/智能体平面适配） ──────────────────────────────────────────────
-# Bash 与 PowerShell 按平台互斥禁用，执行器位于宿主平面，工具行位于智能体平面
-- id: tool-bash                                     # 智能体平面：Bash 工具行（Windows 禁用）
+# ── shell ───────────────────────────────────────────────────────────────────
+
+- id: tool-bash
   name: '@deepseek-ai/dsh-tool-bash'
   disabled: !!js process.platform === 'win32'
 
-- id: tool-pwsh                                     # 智能体平面：PowerShell 工具行（非 Windows 禁用）
+- id: tool-pwsh
   name: '@deepseek-ai/dsh-tool-pwsh'
   disabled: !!js process.platform !== 'win32'
 
-# ── filesystem（宿主工具代理） ───────────────────────────────────────────────
-# 注册至宿主 tools 目录，fs 实际能力与沙箱策略保留在宿主平面
-- id: tool-fs                                       # 智能体平面：文件读写工具
+# ── filesystem ──────────────────────────────────────────────────────────────
+
+- id: tool-fs
   name: '@deepseek-ai/dsh-tool-fs'
 
-- id: tool-fs-search                                # 智能体平面：文件搜索与 glob 工具
+- id: tool-fs-search
   name: '@deepseek-ai/dsh-tool-fs-search'
   config:
     sampleOverCapGlobResults: false
 
-# ── human in the loop（宿主工具代理） ─────────────────────────────────────────
-# 人机协作审批断点交互通道
-- id: tool-ask-user                                 # 智能体平面：用户交互提问与审批工具
-  name: '@deepseek-ai/dsh-tool-ask-user'
+# ── background jobs ────────────────────────────────────────────────────────
 
-# ── workflow engine & controller（会话隔离组） ────────────────────────────────
-# 核心工作流执行器与 Controller 模型工具：使用 entry-local isolate 域隔离 workflowEngine
-- id: workflow-runtime                              # 智能体平面：工作流隔离组
+- id: tool-jobs
+  name: '@deepseek-ai/dsh-tool-jobs'
+
+# ── skills ──────────────────────────────────────────────────────────────────
+
+- id: skill-filesystem
+  name: '@deepseek-ai/dsh-skill-filesystem'
+
+- id: tool-skill
+  name: '@deepseek-ai/dsh-tool-skill'
+
+# ── goals ───────────────────────────────────────────────────────────────────
+
+- id: tool-goal
+  name: '@deepseek-ai/dsh-tool-goal'
+
+# ── plan mode ───────────────────────────────────────────────────────────────
+
+- id: planning
   name: cordis:group
   group: true
   isolate:
-    workflowEngine: true                            # 会话级隔离，防止双会话 realm 冲突
+    planMode: true
   config:
-    # workflow-runner 包装 WorkflowController 并注册 tool-workflow-controller
-    - id: tool-workflow-controller                  # 智能体平面：工作流控制器模型工具（十一动作）
-      name: '@dsh-workflow/workflow-controller'
+    - id: plan-mode
+      name: '@deepseek-ai/dsh-plan-mode'
       config:
-        workflowsDir: '.dsh/workflows'
+        section: |
+              You are in plan mode. Stay in plan mode until exit_plan_mode succeeds or the user switches the session mode.
+
+# ── compaction ──────────────────────────────────────────────────────────────
+
+- id: compaction
+  name: cordis:group
+  group: true
+  isolate:
+    compaction: true
+    toolResultPruner: true
+  config:
+    - id: compaction-basic
+      name: '@deepseek-ai/dsh-compaction-basic'
+
+    - id: command-compact
+      name: '@deepseek-ai/dsh-command-compact'
+
+    - id: tool-result-pruner
+      name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+      config:
+        thresholdChars: 8192
+        headChars: 4096
+        tailChars: 1024
+
+# ── delegation and workflows ────────────────────────────────────────────────
+
+- id: delegation
+  name: cordis:group
+  group: true
+  isolate:
+    workflowEngine: true
+  config:
+    - id: tool-subagent-control
+      name: '@deepseek-ai/dsh-tool-subagent-control'
+
+    - id: tool-subagent-list-agents
+      name: '@deepseek-ai/dsh-tool-subagent-control/list-agents'
+
+    - id: tool-subagent
+      name: '@deepseek-ai/dsh-tool-subagent'
+      config:
+        provider: spawn
+        toolName: subagent
+        backgroundMode: continuable
+
+    - id: workflow-worker-thread
+      name: '@deepseek-ai/dsh-workflow-worker-thread'
+      config:
+        provider: spawn
+
+    - id: tool-workflow
+      name: '@deepseek-ai/dsh-tool-workflow'
+
+# ── remaining model-facing rows ─────────────────────────────────────────────
+
+- id: tool-ask-user
+  name: '@deepseek-ai/dsh-tool-ask-user'
+
+- id: tool-todo
+  name: '@deepseek-ai/dsh-tool-todo'
+  config:
+    allowParallelInProgress: true
+
+- id: tool-web
+  name: '@deepseek-ai/dsh-tool-web'
+  config:
+    fetch: false
+    searchTimeoutMs: 60000
