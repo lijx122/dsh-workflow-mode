@@ -5,13 +5,12 @@
  * - package.json 中声明 dsh.client.platform = "web"
  * - 依赖注入模块：@deepseek-ai/dsh-client-ui-slots, @deepseek-ai/dsh-client-runtime
  * - bundle 入口对应 exports["./client"]
- * 
- * 真实宿主挂载待联测：
- * 运行时在真实 DSH 宿主环境经 slots.register(...) 注册工作区视图 Slot (viewId=workflow-canvas)
- * 与会话/运行视图路由切换；随 web-ui-all 聚合包安装生效。
+ * - 遵循 DSH ModuleLoader 惰性 CJS factory 规约 (apply / inject)
  */
 
 import { WorkflowCanvas } from "./canvas.js";
+
+export const inject = ["slots", "runtime"];
 
 export interface DshClientContext {
   slots?: {
@@ -26,9 +25,9 @@ export interface DshClientContext {
 }
 
 /**
- * Client 插件激活/注册入口
+ * Client 插件激活/注册入口 (Cordis Client apply contract)
  */
-export function activate(ctx?: DshClientContext): void {
+export function apply(ctx?: DshClientContext): void {
   if (ctx?.slots?.register) {
     ctx.slots.register({
       id: "workflow-canvas",
@@ -39,7 +38,14 @@ export function activate(ctx?: DshClientContext): void {
   }
 }
 
+export function activate(ctx?: DshClientContext): void {
+  apply(ctx);
+}
+
+export { WorkflowCanvas };
+
 export default {
+  apply,
   activate,
   WorkflowCanvas,
 };
