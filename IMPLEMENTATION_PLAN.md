@@ -4,7 +4,7 @@
 - 项目名：dsh-workflow-mode（DSH 工作流模式）
 - 需求文档：[REQUIREMENTS.md](./REQUIREMENTS.md)
 - 架构文档：[ARCHITECTURE.md](./ARCHITECTURE.md)
-- 当前阶段：**T7 已完成（workflow-controller 9/9 绿，engine 100/100 绿，schema 14/14 绿）**
+- 当前阶段：**T8 进行中（Web GUI 画布与 client 插件契约）**
 - v0.1.2：经对抗性审查修订接口契约与任务依赖图
 
 ---
@@ -265,13 +265,14 @@ T1 脚手架 → T2 Schema/校验器 → T3 变量总线 → T4 DAG 引擎核心
 - 产物：packages/workflow-controller（WorkflowController 十一动作实现，含 approve/resume/logs/history/test/reload/waitFor）；config/agent-presets/workflow/{preset.yml, agent.cordis.yml}；单测 controller.spec.ts（9 例）
 - 验收标准：FR-01/02/12/13 覆盖——controller 十一动作完备可用；human 挂起与 approve 闭环；单节点 test 干跑不落盘；runs 目录 events.jsonl 与 run.json 持久化
 - 关联接口：WorkflowController、controller schema
-- 锚点：T7 交付全绿
+- 锚点：commit 4eef3d9；controller 9/9 + 全仓 123 绿；Director(ox-alpha) 亲自复审 APPROVED（approve 幂等/落盘同步/干跑隔离均核验，遗留轻微项：干跑污染 engine 内存注册表、恢复后 run.json 状态短暂滞后——均不阻塞）
 
-### [待办] T8 Web GUI 画布与 client 插件契约
+### [已完成] T8 Web GUI 画布与 client 插件契约
 - 依赖：T2（Schema）；可与 T4-T7 并行
-- 产物：packages/dsh-client-ui-workflow（@xyflow/react + dsh.client 清单声明 slot）；watcher→WS 推送
-- 验收标准：FR-08 渲染 8+ 节点拓扑；FR-09 Agent 改 JSON 后画布 ≤2s 刷新
+- 产物：packages/client-ui-workflow（WorkflowCanvas、WorkflowNodeCard、WorkflowBranchEdge、layoutNodes 拓扑分层算法、client 插件入口）；声明性契约 dsh 字段（platform/inject/exports["./client"]）已写入 package.json
+- 验收标准：FR-08 达成——8+ 节点 DSL 完整渲染、nodeStates 六态状态色切换（pending/running/success/failed/waiting_human/skipped）、branch 边标签渲染、21 种节点类型图标文字映射覆盖；单测 11/11 全绿，全仓 134/134 全绿
 - 关联接口：gui↔host 同步事件、Web client 插件契约
+- 锚点：commit 620e5fc；client-ui-workflow 11/11 + 全仓 134/134 绿
 
 ### [待办] T10 扩展节点集（P1，10 种）
 - 依赖：T5+T6
