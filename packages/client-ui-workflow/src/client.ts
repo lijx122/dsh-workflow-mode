@@ -11,13 +11,31 @@ import { WorkflowCanvas } from "./canvas.js";
 
 export const inject = [];
 
-export function apply(_ctx?: unknown): void {
-  // Client plugin loaded into DSH Web GUI runtime.
-  // WorkflowCanvas component is exported for canvas and session views.
+export interface DshClientContext {
+  slots?: {
+    register: (slotDef: {
+      id: string;
+      title: string;
+      icon?: string;
+      component: unknown;
+    }) => void;
+  };
+  runtime?: unknown;
 }
 
-export function activate(ctx?: unknown): void {
-  apply(ctx);
+export function activate(ctx?: DshClientContext): void {
+  if (ctx?.slots?.register) {
+    ctx.slots.register({
+      id: "workflow-canvas",
+      title: "Workflow Canvas",
+      icon: "git-merge",
+      component: WorkflowCanvas,
+    });
+  }
+}
+
+export function apply(ctx?: DshClientContext): void {
+  activate(ctx);
 }
 
 export { WorkflowCanvas };
