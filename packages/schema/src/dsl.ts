@@ -250,91 +250,121 @@ export const PluginToolNodeSchema = Type.Object({
 
 export type PluginToolNode = Static<typeof PluginToolNodeSchema>;
 
-// ================= P1 节点类型定义（专有字段待 T10 补齐） =================
+// ================= P1 节点类型定义 =================
 
-/** SwitchNode (P1 字段待 T10 补齐) */
+/** SwitchNode */
+export const SwitchCaseItemSchema = Type.Union([
+  Type.String(),
+  Type.Object({
+    when: Type.Optional(Type.String()),
+    condition: Type.Optional(Type.String()),
+    value: Type.Optional(Type.String()),
+    target: Type.Optional(Type.String()),
+  }),
+]);
+
 export const SwitchNodeSchema = Type.Object({
   ...BaseNodeFields,
   type: Type.Literal("switch"),
-  cases: Type.Optional(Type.Array(Type.Object({ condition: Type.String(), target: Type.Optional(Type.String()) }))),
+  cases: Type.Array(SwitchCaseItemSchema),
   defaultCase: Type.Optional(Type.String()),
+  default: Type.Optional(Type.String()),
+  expression: Type.Optional(Type.String()),
+  value: Type.Optional(Type.String()),
 });
 export type SwitchNode = Static<typeof SwitchNodeSchema>;
 
-/** WaitNode (P1 字段待 T10 补齐) */
+/** WaitNode */
 export const WaitNodeSchema = Type.Object({
   ...BaseNodeFields,
   type: Type.Literal("wait"),
-  durationMs: Type.Optional(Type.Number()),
+  waitMs: Type.Optional(Type.Number({ minimum: 0 })),
+  until: Type.Optional(Type.String()),
+  durationMs: Type.Optional(Type.Number({ minimum: 0 })),
 });
 export type WaitNode = Static<typeof WaitNodeSchema>;
 
-/** MergeNode (P1 字段待 T10 补齐) */
+/** MergeNode */
 export const MergeNodeSchema = Type.Object({
   ...BaseNodeFields,
   type: Type.Literal("merge"),
-  strategy: Type.Optional(Type.String()),
+  strategy: Type.Optional(
+    Type.Union([Type.Literal("shallow"), Type.Literal("deep")]),
+  ),
 });
 export type MergeNode = Static<typeof MergeNodeSchema>;
 
-/** ErrorFallbackNode (P1 字段待 T10 补齐) */
+/** ErrorFallbackNode */
 export const ErrorFallbackNodeSchema = Type.Object({
   ...BaseNodeFields,
   type: Type.Literal("error_fallback"),
 });
 export type ErrorFallbackNode = Static<typeof ErrorFallbackNodeSchema>;
 
-/** ScheduleTriggerNode (P1 字段待 T10 补齐) */
+/** ScheduleTriggerNode */
 export const ScheduleTriggerNodeSchema = Type.Object({
   ...BaseNodeFields,
   type: Type.Literal("schedule_trigger"),
-  cron: Type.Optional(Type.String()),
+  cron: Type.String(),
 });
 export type ScheduleTriggerNode = Static<typeof ScheduleTriggerNodeSchema>;
 
-/** WebhookTriggerNode (P1 字段待 T10 补齐) */
+/** WebhookTriggerNode */
 export const WebhookTriggerNodeSchema = Type.Object({
   ...BaseNodeFields,
   type: Type.Literal("webhook_trigger"),
+  name: Type.Optional(Type.String()),
   path: Type.Optional(Type.String()),
   secret: Type.Optional(Type.String()),
 });
 export type WebhookTriggerNode = Static<typeof WebhookTriggerNodeSchema>;
 
-/** IntentClassifierNode (P1 字段待 T10 补齐) */
+/** IntentClassifierNode */
 export const IntentClassifierNodeSchema = Type.Object({
   ...BaseNodeFields,
   type: Type.Literal("intent_classifier"),
-  input: Type.Optional(Type.String()),
+  categories: Type.Optional(Type.Array(Type.String())),
   intents: Type.Optional(Type.Array(Type.String())),
+  prompt: Type.String(),
+  model: Type.Optional(Type.String()),
+  input: Type.Optional(Type.String()),
 });
 export type IntentClassifierNode = Static<typeof IntentClassifierNodeSchema>;
 
-/** ParameterExtractorNode (P1 字段待 T10 补齐) */
+/** ParameterExtractorNode */
 export const ParameterExtractorNodeSchema = Type.Object({
   ...BaseNodeFields,
   type: Type.Literal("parameter_extractor"),
-  schema: Type.Optional(Type.Unknown()),
+  schema: Type.Record(Type.String(), Type.Unknown()),
+  prompt: Type.String(),
+  model: Type.Optional(Type.String()),
+  input: Type.Optional(Type.String()),
 });
 export type ParameterExtractorNode = Static<typeof ParameterExtractorNodeSchema>;
 
-/** SubWorkflowNode (P1 字段待 T10 补齐) */
+/** SubWorkflowNode */
 export const SubWorkflowNodeSchema = Type.Object({
   ...BaseNodeFields,
   type: Type.Literal("sub_workflow"),
+  workflow: Type.Optional(
+    Type.Union([Type.String(), Type.Record(Type.String(), Type.Unknown())]),
+  ),
   workflowName: Type.Optional(Type.String()),
   workflowPath: Type.Optional(Type.String()),
+  inlineDsl: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
+  maxDepth: Type.Optional(Type.Number({ minimum: 1 })),
 });
 export type SubWorkflowNode = Static<typeof SubWorkflowNodeSchema>;
 
-/** HttpRequestNode (P1 字段待 T10 补齐) */
+/** HttpRequestNode */
 export const HttpRequestNodeSchema = Type.Object({
   ...BaseNodeFields,
   type: Type.Literal("http_request"),
-  url: Type.Optional(Type.String()),
+  url: Type.String(),
   method: Type.Optional(Type.String()),
   headers: Type.Optional(Type.Record(Type.String(), Type.String())),
   body: Type.Optional(Type.Unknown()),
+  timeoutMs: Type.Optional(Type.Number({ minimum: 0 })),
 });
 export type HttpRequestNode = Static<typeof HttpRequestNodeSchema>;
 

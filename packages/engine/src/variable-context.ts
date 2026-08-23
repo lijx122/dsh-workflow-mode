@@ -69,6 +69,16 @@ export class VariableContext {
     this.store.set(nodeId, outputs);
   }
 
+  /** 获取指定节点的所有输出快照 */
+  getNodeOutputs(nodeId: string): Record<string, JsonValue> | undefined {
+    return this.store.get(nodeId);
+  }
+
+  /** 判断节点是否已产生输出 */
+  hasNode(nodeId: string): boolean {
+    return this.store.has(nodeId);
+  }
+
   /**
    * 直接引用：值恰为单个占位符 "{{#nodeId.prop}}" 时返回原始 JsonValue（保型）；
    * 此时若节点未输出 / 引用不存在的节点，抛 WorkflowVarError。

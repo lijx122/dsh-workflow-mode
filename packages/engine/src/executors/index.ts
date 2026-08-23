@@ -11,31 +11,22 @@ import { humanExecutor } from "./human.js";
 import { llmExecutor } from "./llm.js";
 import { subagentExecutor } from "./subagent.js";
 import { pluginToolExecutor } from "./plugin_tool.js";
-import { NotImplementedError } from "./errors.js";
-
-// P1 暂未实现的默认桩
-const p1Stub = (type: string): NodeExecutor => ({
-  type: type as NodeType,
-  execute: async () => {
-    throw new NotImplementedError(`P1 node type "${type}" not yet implemented`);
-  },
-});
-
-const P1_TYPES: NodeType[] = [
-  "switch", "wait", "merge", "error_fallback",
-  "schedule_trigger", "webhook_trigger",
-  "intent_classifier", "parameter_extractor",
-  "sub_workflow", "http_request",
-];
+import { switchExecutor } from "./switch.js";
+import { waitExecutor } from "./wait.js";
+import { mergeExecutor } from "./merge.js";
+import { errorFallbackExecutor } from "./error_fallback.js";
+import { scheduleTriggerExecutor } from "./schedule_trigger.js";
+import { webhookTriggerExecutor } from "./webhook_trigger.js";
+import { intentClassifierExecutor } from "./intent_classifier.js";
+import { parameterExtractorExecutor } from "./parameter_extractor.js";
+import { subWorkflowExecutor } from "./sub_workflow.js";
+import { httpRequestExecutor } from "./http_request.js";
 
 /**
- * 创建完整执行器注册表（21 种 NodeType，含 P0 可执行 + P1 桩）。
- * P0 7 种纯逻辑执行器（start/end/if_else/template/set_variable/code/iteration）
- * 使用真实实现；P0 4 种 DSH 集成节点（human/llm/subagent/plugin_tool）抛出 NotImplementedError；
- * P1 10 种抛出 NotImplementedError。
+ * 创建完整执行器注册表（21 种 NodeType 全覆盖）。
  */
 export function createExecutors(): Record<NodeType, NodeExecutor> {
-  const registry: Record<string, NodeExecutor> = {
+  const registry: Record<NodeType, NodeExecutor> = {
     start: startExecutor,
     end: endExecutor,
     if_else: ifElseExecutor,
@@ -47,16 +38,46 @@ export function createExecutors(): Record<NodeType, NodeExecutor> {
     llm: llmExecutor,
     subagent: subagentExecutor,
     plugin_tool: pluginToolExecutor,
+    switch: switchExecutor,
+    wait: waitExecutor,
+    merge: mergeExecutor,
+    error_fallback: errorFallbackExecutor,
+    schedule_trigger: scheduleTriggerExecutor,
+    webhook_trigger: webhookTriggerExecutor,
+    intent_classifier: intentClassifierExecutor,
+    parameter_extractor: parameterExtractorExecutor,
+    sub_workflow: subWorkflowExecutor,
+    http_request: httpRequestExecutor,
   };
 
-  for (const t of P1_TYPES) {
-    registry[t] = p1Stub(t);
-  }
-
   // 将 iteration 的 body 解析器注入
-  setExecutorResolver((type: string) => registry[type] as NodeExecutor | undefined);
+  setExecutorResolver((type: string) => registry[type as NodeType] as NodeExecutor | undefined);
 
-  return registry as Record<NodeType, NodeExecutor>;
+  return registry;
 }
+
+export {
+  startExecutor,
+  endExecutor,
+  ifElseExecutor,
+  iterationExecutor,
+  templateExecutor,
+  setVariableExecutor,
+  codeExecutor,
+  humanExecutor,
+  llmExecutor,
+  subagentExecutor,
+  pluginToolExecutor,
+  switchExecutor,
+  waitExecutor,
+  mergeExecutor,
+  errorFallbackExecutor,
+  scheduleTriggerExecutor,
+  webhookTriggerExecutor,
+  intentClassifierExecutor,
+  parameterExtractorExecutor,
+  subWorkflowExecutor,
+  httpRequestExecutor,
+};
 
 export { NotImplementedError, hostNotBound } from "./errors.js";

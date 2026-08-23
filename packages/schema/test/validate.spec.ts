@@ -309,4 +309,68 @@ describe("validateWorkflow", () => {
     expect(res.ok).toBe(false);
     expect(res.errors.some((e) => e.code === "SCHEMA" && e.path === "nodes[0].retry")).toBe(true);
   });
+
+  it("P1 节点专有字段验证：10 种 P1 节点合法 DSL validate 通过 ok:true", () => {
+    const dsl = {
+      version: "dsh.workflow.v1",
+      name: "all_p1_nodes_flow",
+      nodes: [
+        { id: "start_node", type: "start" },
+        { id: "switch_node", type: "switch", cases: [{ when: "1 > 0", value: "ok" }], defaultCase: "fallback" },
+        { id: "wait_node", type: "wait", waitMs: 100 },
+        { id: "merge_node", type: "merge", strategy: "deep" },
+        { id: "error_fallback_node", type: "error_fallback" },
+        { id: "schedule_trigger_node", type: "schedule_trigger", cron: "0 * * * *" },
+        { id: "webhook_trigger_node", type: "webhook_trigger", name: "hook1" },
+        { id: "intent_classifier_node", type: "intent_classifier", prompt: "classify this", categories: ["a", "b"] },
+        { id: "parameter_extractor_node", type: "parameter_extractor", prompt: "extract this", schema: { type: "object" } },
+        { id: "sub_workflow_node", type: "sub_workflow", workflow: "sub.json" },
+        { id: "http_request_node", type: "http_request", url: "https://api.example.com/test", method: "POST" },
+        { id: "end_node", type: "end" },
+      ],
+      edges: [
+        { id: "e1", source: "start_node", target: "switch_node" },
+        { id: "e2", source: "switch_node", target: "wait_node", branch: "ok" },
+        { id: "e3", source: "wait_node", target: "merge_node" },
+        { id: "e4", source: "merge_node", target: "error_fallback_node" },
+        { id: "e5", source: "error_fallback_node", target: "schedule_trigger_node" },
+        { id: "e6", source: "schedule_trigger_node", target: "webhook_trigger_node" },
+        { id: "e7", source: "webhook_trigger_node", target: "intent_classifier_node" },
+        { id: "e8", source: "intent_classifier_node", target: "parameter_extractor_node" },
+        { id: "e9", source: "parameter_extractor_node", target: "sub_workflow_node" },
+        { id: "e10", source: "sub_workflow_node", target: "http_request_node" },
+        { id: "e11", source: "http_request_node", target: "end_node" },
+      ],
+    };
+
+    const res = validateWorkflow(dsl);
+    expect(res.ok).toBe(true);
+    expect(res.errors).toHaveLength(0);
+  });
+
+  it("P1 节点缺专有必填字段 → SCHEMA 错误且 path 精确定位", () => {
+    const dsl = {
+      version: "dsh.workflow.v1",
+      name: "missing_p1_fields_flow",
+      nodes: [
+        { id: "sw", type: "switch" },                          // missing cases
+        { id: "sched", type: "schedule_trigger" },             // missing cron
+        { id: "intent", type: "intent_classifier" },           // missing prompt
+        { id: "param", type: "parameter_extractor" },          // missing schema & prompt
+        { id: "http", type: "http_request" },                  // missing url
+      ],
+      edges: [],
+    };
+
+    const res = validateWorkflow(dsl);
+    expect(res.ok).toBe(false);
+    const schemaErrors = res.errors.filter((e) => e.code === "SCHEMA");
+    const pick = (i: number) => schemaErrors.filter((e) => e.path.startsWith(`nodes[${i}]`)).map((e) => e.path);
+
+    expect(pick(0)).toContain("nodes[0].cases");
+    expect(pick(1)).toContain("nodes[1].cron");
+    expect(pick(2)).toContain("nodes[2].prompt");
+    expect(pick(3).some((p) => p.includes("schema") || p.includes("prompt"))).toBe(true);
+    expect(pick(4)).toContain("nodes[4].url");
+  });
 });

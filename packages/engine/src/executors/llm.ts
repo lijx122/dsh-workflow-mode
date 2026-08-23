@@ -71,7 +71,7 @@ export const llmExecutor: NodeExecutor = {
 };
 
 /** JSON Schema 子集校验器。不符合即抛错（消息含 schema 路径） */
-function validateJsonSchema(
+export function validateJsonSchema(
   value: unknown,
   schema: unknown,
   path: string,

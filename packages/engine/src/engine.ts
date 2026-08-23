@@ -76,6 +76,10 @@ export interface HostServices {
   }) => Promise<{ decision: string; inputs?: Record<string, JsonValue> }>;
   /** code 节点 Worker 沙箱（T5 已绑定，保留占位） */
   codeRuntime?: unknown;
+  /** sub_workflow 节点：按工作流名或路径解析 WorkflowDSL */
+  resolveWorkflow?: (
+    nameOrPath: string,
+  ) => Promise<WorkflowDSL | null> | WorkflowDSL | null;
 }
 
 export interface ExecutionContext {
@@ -139,6 +143,7 @@ export interface RunExecutionOptions {
   onEvent?: (event: RunEvent) => void;
   isTest?: boolean;
   host?: HostServices;
+  callStack?: string[];
 }
 
 // ================= 校验错误 =================
@@ -184,16 +189,30 @@ interface RunControl {
  */
 const BRANCH_ROUTE_TYPES: ReadonlySet<NodeType> = new Set<NodeType>([
   "if_else",
+  "switch",
 ]);
 
 // ================= 工具函数 =================
 
 function resolveNodeInputs(
   node: WorkflowNode,
+  varCtx: VariableContext,
 ): Record<string, JsonValue> {
   const raw = (node as Record<string, unknown>).inputs;
   if (raw && typeof raw === "object" && !Array.isArray(raw)) {
-    return raw as Record<string, JsonValue>;
+    const res: Record<string, JsonValue> = {};
+    for (const [k, v] of Object.entries(raw)) {
+      if (typeof v === "string") {
+        try {
+          res[k] = varCtx.ref(v);
+        } catch {
+          res[k] = v;
+        }
+      } else {
+        res[k] = v as JsonValue;
+      }
+    }
+    return res;
   }
   return {};
 }
@@ -407,6 +426,7 @@ export class WorkflowEngine {
           runOptions?.onEvent?.(fullEv);
         },
         varCtx,
+        callStack: runOptions?.callStack ?? [],
         host: {
           ...effectiveHost,
           askUser: runAskUser,
@@ -465,7 +485,8 @@ export class WorkflowEngine {
       const branch =
         output && typeof output.branch === "string" ? output.branch : undefined;
       // 路由节点未上报 branch → 保守视为无命中分支：出边全部走 SKIPPED，避免 fork-join 死锁
-      return typeof branch === "string" && edge.branch === branch;
+      if (typeof branch !== "string") return false;
+      return edge.branch === branch || edge.sourceHandle === branch;
     }
 
     // DPE 释放一条入边：live 记有效到达（validReceived），skip 只扣减待等待入度；
@@ -548,8 +569,32 @@ export class WorkflowEngine {
               }
 
               // start 节点（工作流入口）注入运行输入；其余节点按声明 inputs 解析
-              const nodeInputs =
-                node.type === "start" ? { ...inputs } : resolveNodeInputs(node);
+              let nodeInputs =
+                node.type === "start" ? { ...inputs } : resolveNodeInputs(node, varCtx);
+
+              if (node.type === "error_fallback") {
+                const inEdgeList = inEdges.get(nodeId) ?? [];
+                for (const ie of inEdgeList) {
+                  const srcState = nodeStates[ie.source];
+                  if (srcState && srcState.status === "failed") {
+                    nodeInputs = {
+                      error: srcState.error ?? "Unknown error",
+                      errorNode: ie.source,
+                      ...nodeInputs,
+                    };
+                    break;
+                  }
+                }
+              }
+
+              if (node.type === "merge") {
+                const inEdgeList = inEdges.get(nodeId) ?? [];
+                const predIds = inEdgeList.map((e) => e.source);
+                nodeInputs = {
+                  _predecessors: predIds,
+                  ...nodeInputs,
+                };
+              }
               const output = await execWithinTimeout(
                 node,
                 executor,
@@ -607,6 +652,28 @@ export class WorkflowEngine {
                 for (const e of succs) {
                   release(nodeId, e, true);
                 }
+              } else if (onError === "route") {
+                // onError "route": 激活 branch="error" 或 sourceHandle="error" 或 target 为 error_fallback 的出边
+                const succs = outEdges.get(nodeId) ?? [];
+                const isErrorEdge = (e: WorkflowEdge) =>
+                  e.branch === "error" ||
+                  e.sourceHandle === "error" ||
+                  nodes.get(e.target)?.type === "error_fallback";
+
+                const hasErrorEdge = succs.some(isErrorEdge);
+                if (hasErrorEdge) {
+                  const errorPayload = {
+                    error: rec.error ?? "Unknown error",
+                    errorNode: nodeId,
+                  };
+                  outputs[nodeId] = errorPayload;
+                  varCtx.set(nodeId, errorPayload);
+
+                  for (const e of succs) {
+                    release(nodeId, e, isErrorEdge(e));
+                  }
+                }
+                // 无 error 出边时维持 stop 语义
               }
               // onError "stop" (默认): 不传播，下游保持 pending
             }
