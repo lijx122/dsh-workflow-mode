@@ -1,3 +1,3 @@
 - insert:
-    - id: workflow-canvas-host
+    - id: '@dsh-workflow/client-ui-workflow'
       name: '@dsh-workflow/client-ui-workflow/cordis-plugin'
