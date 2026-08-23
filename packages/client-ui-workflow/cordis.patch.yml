@@ -1,3 +1,3 @@
 - insert:
     - id: '@dsh-workflow/client-ui-workflow'
-      name: '@dsh-workflow/client-ui-workflow/cordis-plugin'
+      name: '@dsh-workflow/client-ui-workflow'
