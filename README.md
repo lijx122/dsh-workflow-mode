@@ -8,7 +8,7 @@
 
 ## 核心特性
 
-- **确定性 DAG 执行**：拓扑排序调度，节点级显式变量流（`{{#node_id.output#}}`），无上下文污染。
+- **确定性 DAG 执行**：拓扑排序调度，节点级显式变量流（`{{#node_id.output}}`），无上下文污染。
 - **Agent 直改 JSON**：自然语言一句话编排/重构/自愈工作流，无需手动拖拽。
 - **DSH 插件原生映射**：已安装插件（tool-bash / dsh-ssh / task-board 等）自动反射为 Plugin Tool 节点。
 - **人机断点协同**：高危操作前 Human 节点暂停，等待 GUI 审批后继续。
@@ -23,14 +23,15 @@
 | [TECH_DEBT.md](./TECH_DEBT.md) | 技术债清单 |
 | [CHANGELOG.md](./CHANGELOG.md) | 变更与回滚记录 |
 
-## 目标产物结构（规划）
+## 产物结构
 
 ```
 dsh-workflow-mode/
 ├─ packages/
-│  ├─ dsh-workflow-schema/        # DSL Schema 与校验器 (T2)
-│  ├─ dsh-workflow-engine/        # DAG 引擎核心 (T3/T4/T5)
-│  └─ dsh-client-ui-workflow/     # Web GUI React Flow 画布 (T8)
-├─ config/agent-presets/workflow/ # Preset 注册 (T7)
-└─ examples/workflows/            # 示例工作流 JSON (T9)
+│  ├─ schema/                 # @dsh-workflow/schema: DSL Schema 与 validateWorkflow 校验器
+│  ├─ engine/                 # @dsh-workflow/engine: DAG 引擎核心与 21 节点执行器
+│  ├─ client-ui-workflow/     # @dsh-workflow/client-ui-workflow: Web GUI React Flow 画布插件
+│  └─ workflow-controller/    # @dsh-workflow/workflow-controller: 控制器十一动作、热重载与保留策略
+├─ config/agent-presets/workflow/ # Preset 注册
+└─ examples/workflows/            # 示例工作流 (ci-deploy.json, batch-report.json)
 ```

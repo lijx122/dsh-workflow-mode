@@ -1,0 +1,95 @@
+{
+  "version": "dsh.workflow.v1",
+  "name": "批量文件清洗与汇总报告",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "start",
+      "inputs": {
+        "files": {
+          "type": "object",
+          "default": [
+            {
+              "name": "  User_Data.CSV  ",
+              "size": 1024
+            },
+            {
+              "name": "System_LOG.txt ",
+              "size": 2048
+            },
+            {
+              "name": " Metrics_2025.JSON ",
+              "size": 4096
+            }
+          ]
+        },
+        "title": {
+          "type": "string",
+          "default": "Data Ingestion Summary"
+        }
+      }
+    },
+    {
+      "id": "clean_files",
+      "type": "iteration",
+      "over": "{{#start.files}}",
+      "maxConcurrency": 2,
+      "body": [
+        {
+          "id": "sanitize_code",
+          "type": "code",
+          "code": "const item = inputs._item || {}; const rawName = typeof item === 'string' ? item : (item.name || ''); const name = rawName.trim().toLowerCase(); const size = typeof item === 'object' && item ? (item.size || 0) : 0; return { name, size, valid: name.length > 0 };"
+        }
+      ]
+    },
+    {
+      "id": "set_vars",
+      "type": "set_variable",
+      "assignments": [
+        {
+          "key": "cleaned_items",
+          "value": "{{#clean_files.items}}"
+        },
+        {
+          "key": "report_title",
+          "value": "{{#start.title}}"
+        }
+      ]
+    },
+    {
+      "id": "render_report",
+      "type": "template",
+      "template": "# {{#set_vars.report_title}}\n\nCleaned Files:\n{{#set_vars.cleaned_items}}\n\nStatus: All items processed successfully."
+    },
+    {
+      "id": "end",
+      "type": "end",
+      "outputs": {
+        "report": "{{#render_report.result}}",
+        "status": "success"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "source": "start",
+      "target": "clean_files"
+    },
+    {
+      "id": "e2",
+      "source": "clean_files",
+      "target": "set_vars"
+    },
+    {
+      "id": "e3",
+      "source": "set_vars",
+      "target": "render_report"
+    },
+    {
+      "id": "e4",
+      "source": "render_report",
+      "target": "end"
+    }
+  ]
+}

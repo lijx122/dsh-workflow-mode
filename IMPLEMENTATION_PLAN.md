@@ -4,7 +4,7 @@
 - 项目名：dsh-workflow-mode（DSH 工作流模式）
 - 需求文档：[REQUIREMENTS.md](./REQUIREMENTS.md)
 - 架构文档：[ARCHITECTURE.md](./ARCHITECTURE.md)
-- 当前阶段：**T11 已完成（运行日志保留策略清理器全绿）——待办 T10 扩展节点集 / T9 端到端示例**
+- 当前阶段：**全部任务已交付完成（T1-T12 全绿，全仓 176 测试通过）**
 - v0.1.2：经对抗性审查修订接口契约与任务依赖图
 
 ---
@@ -274,7 +274,7 @@ T1 脚手架 → T2 Schema/校验器 → T3 变量总线 → T4 DAG 引擎核心
 - 关联接口：gui↔host 同步事件、Web client 插件契约
 - 锚点：commit 6016daf；client-ui-workflow 11/11 + 全仓 134/134 绿；Director(ox-alpha) 静态复审 APPROVED
 
-### [待办] T10 扩展节点集（P1，10 种）
+### [已完成] T10 扩展节点集（P1，10 种）
 - 依赖：T5+T6
 - 产物：switch/wait/merge/error_fallback/intent_classifier/parameter_extractor/sub_workflow/http_request 执行器 + schedule_trigger/webhook_trigger 绑定；onError 扩展 route；batch 声明式批处理
 - 验收标准：FR-11 全部单测通过；error_fallback 注入故障按 route 改道；webhook 无效鉴权 401、超 1MB body 413、过期时间戳 401；sub_workflow 经 ExecutionContext.callStack 校验深度 ≤3 且拒绝环路
@@ -292,7 +292,11 @@ T1 脚手架 → T2 Schema/校验器 → T3 变量总线 → T4 DAG 引擎核心
 - 验收标准：FR-14 达成——写入合法 JSON 校验通过并原子换版、写入非法 JSON 触发 onInvalid 且 registry 保持 last-good 回退、同内容哈希去重单次触发；单测 13/13 全绿，全仓 138/138 全绿
 - 关联接口：WorkflowFileWatcher、WorkflowControllerOptions（watcher/debounceMs/onRegistryChange）、WorkflowController.registry
 
-### [待办] T9 端到端示例与收尾
+### [已完成] T9 端到端示例与收尾
+- 依赖：T7+T8+T10+T11+T12
+- 产物：examples/workflows/ci-deploy.json、examples/workflows/batch-report.json、packages/workflow-controller/test/e2e.spec.ts、README.md、CHANGELOG.md
+- 验收标准：FR-10 达成（两示例端到端跑通并验证 HIGH 风险审批、LOW 风险 DPE 跳过、批量清洗模板报告生成）；FR-01～FR-14 全部勾验完毕；单测 21/21 绿，全仓 176/176 绿
+- 锚点：feat(T9): end-to-end workflow examples and project wrap-up
 - 依赖：T7+T8+T10+T11+T12
 - 产物：examples/workflows/ 两个示例 JSON；运行日志留存；CHANGELOG v0.1.0
 - 验收标准：FR-10 两示例各完整跑通一次并留存日志；FR-01～FR-14 全部勾验完毕

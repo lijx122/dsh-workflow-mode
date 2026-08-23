@@ -1,0 +1,132 @@
+{
+  "version": "dsh.workflow.v1",
+  "name": "代码检出-审计-部署",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "start",
+      "inputs": {
+        "repo_url": {
+          "type": "string",
+          "default": "https://github.com/example/dsh-app.git"
+        },
+        "env": {
+          "type": "string",
+          "default": "production"
+        }
+      }
+    },
+    {
+      "id": "git_clone",
+      "type": "plugin_tool",
+      "toolName": "tool-bash",
+      "onError": "stop",
+      "inputs": {
+        "command": "git clone {{#start.repo_url}} ./repo && cd ./repo && git diff HEAD~1"
+      }
+    },
+    {
+      "id": "extract",
+      "type": "code",
+      "code": "return inputs.diff.split('\\n').filter(l => l.startsWith('+') || l.startsWith('-')).join('\\n');",
+      "inputs": {
+        "diff": "{{#git_clone.stdout}}"
+      }
+    },
+    {
+      "id": "audit",
+      "type": "llm",
+      "model": "deepseek-reasoner",
+      "prompt": "审计并给风险等级：{{#extract.result}}",
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "riskLevel": {
+            "type": "string",
+            "enum": [
+              "HIGH",
+              "MEDIUM",
+              "LOW"
+            ]
+          }
+        },
+        "required": [
+          "riskLevel"
+        ]
+      }
+    },
+    {
+      "id": "gate",
+      "type": "if_else",
+      "condition": "audit.result.riskLevel == 'HIGH'"
+    },
+    {
+      "id": "confirm",
+      "type": "human",
+      "prompt": "发现高危，继续部署 {{#start.env}}？",
+      "timeoutMs": 3600000,
+      "onTimeout": "abort"
+    },
+    {
+      "id": "deploy",
+      "type": "plugin_tool",
+      "toolName": "dsh-ssh",
+      "action": "ssh_exec",
+      "inputs": {
+        "alias": "{{#start.env}}",
+        "command": "cd /app && git pull && pm2 reload app"
+      }
+    },
+    {
+      "id": "end",
+      "type": "end",
+      "outputs": {
+        "status": "success"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "source": "start",
+      "target": "git_clone"
+    },
+    {
+      "id": "e2",
+      "source": "git_clone",
+      "target": "extract"
+    },
+    {
+      "id": "e3",
+      "source": "extract",
+      "target": "audit"
+    },
+    {
+      "id": "e4",
+      "source": "audit",
+      "target": "gate"
+    },
+    {
+      "id": "e5",
+      "source": "gate",
+      "target": "confirm",
+      "branch": "true"
+    },
+    {
+      "id": "e6",
+      "source": "gate",
+      "target": "deploy",
+      "branch": "false"
+    },
+    {
+      "id": "e7",
+      "source": "confirm",
+      "target": "deploy"
+    },
+    {
+      "id": "e8",
+      "source": "deploy",
+      "target": "end"
+    }
+  ]
+}

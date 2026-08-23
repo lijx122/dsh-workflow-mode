@@ -1,5 +1,34 @@
 # 变更记录
 
+## v0.1.0-dev（2026-08-16）
+
+### 新增
+- **全阶段任务交付完成（T1～T12）**：全仓 176 测试 100% 通过（packages/schema: 16，packages/engine: 128，packages/client-ui-workflow: 11，packages/workflow-controller: 21）。
+- **T1 项目脚手架**（锚点 `58aced7`）：pnpm workspace + TS 5.6 + ESM + Vitest 测试环境。
+- **T2 Schema 与校验器**（锚点 `2f123e8`，fix `c8201ce`, `901366e`）：TypeBox DSL Schema 与 `validateWorkflow` 校验器（环路检测、悬空连线、重名与非法 ID 拦截）。
+- **T3 变量总线**（锚点 `259d73a`，fix `68c9396`）：Run 级独立 `VariableContext`，支持保型直接引用、文本插值与 `expr-eval` 上下文表达式求值，阻断原型链穿透。
+- **T4 DAG 引擎核心与调度**（锚点 `947f033`/`b24baff`，fix `d2d72b9`/`e9886b8`）：拓扑排序、DPE（死路径消除/OR-Join）、p-queue 限流调度、重试退避、超时熔断与 structuredClone 执行实例隔离。
+- **T5 P0 节点执行器与沙箱**（锚点 `4178d01`，fix `cbd723c`/`3563d92`）：Start/End/IfElse/Iteration/Human/LLM/Subagent/Code/Template/SetVariable/PluginTool 11 种节点；Worker + `node:vm` 物理隔离沙箱与 `terminate()` 熔断。
+- **T6 DSH 服务绑定层**（锚点 `994c9fc`，fix `1c03d3a`）：依赖注入模式 `HostServices` 适配器（tools/llm/subagents/askUser/resolveWorkflow）。
+- **T7 Workflow Controller**（锚点 `4eef3d9`）：11 个动作全面支持（list/validate/run/status/stop/approve/resume/logs/history/test/reload）与 preset 骨架。
+- **T8 Web GUI React Flow 画布**（锚点 `6016daf`）：基于 @xyflow/react 的可视画布，支持 21 种节点图标映射、六态运行状态色、分支边标签与拓扑自动分层。
+- **T10 P1 扩展节点集**（锚点 `205db66`）：Switch/Wait/Merge/ErrorFallback/ScheduleTrigger/WebhookTrigger/IntentClassifier/ParameterExtractor/SubWorkflow/HttpRequest 10 种扩展节点，支持 route 错误改道与声明式 batch 批处理。
+- **T11 运行日志持久化与保留清理器**（锚点 `17324bc`）：`RetentionCleaner`（100 次 run / 7 天保留策略，超限与过期惰性清理，快照截断与 slug 安全清洗）。
+- **T12 文件热重载**（锚点 `ae80c0b`）：`WorkflowFileWatcher`（chokidar 监听、300ms 防抖、SHA-1 哈希去重、last-good 校验失败回退与版本原子递增）。
+- **T9 端到端示例与集成测试**：
+  - `examples/workflows/ci-deploy.json`（代码检出-审计-人工审批-部署流水线，含 DPE 分支消除与 Human 断点回填）
+  - `examples/workflows/batch-report.json`（批量文件清洗-变量汇总-模板报告生成）
+  - `packages/workflow-controller/test/e2e.spec.ts`（3 个端到端测试覆盖 HIGH 风险审批通过、LOW 风险 DPE 跳过、批量清洗与模板渲染断言）
+
+### 修复
+- 修复 Code 节点 VM 沙箱在 Object.prototype / 跨 realm 访问逃逸问题。
+- 修复 if_else 分叉汇聚在朴素入度调度下的死锁（DPE 令牌传播与 OR-Join）。
+- 修复 human 节点在 abort/timeout race 后的 timer 句柄清理防止钉住事件循环。
+- 修复 watcher 在重复写入相同内容时的防抖哈希去重。
+
+### 回滚方式
+- 命令：`git checkout v0.1.0-dev` 或检出前置锚点 commit
+
 ## v0.1.5-plan（2026-08-16）
 
 ### 新增
@@ -98,21 +127,3 @@
 - 无
 
 ### 回滚方式
-- 尚未建立版本控制；文档级回滚：恢复 v0.1.0-plan 版本的三份文档内容
-
-## v0.1.0-plan（2026-08-16）
-
-### 新增
-- 项目文档结构初始化：README / REQUIREMENTS / ARCHITECTURE / IMPLEMENTATION_PLAN / TECH_DEBT / CHANGELOG
-- 确定 10 节点体系与 dsh.workflow.v1 DSL 契约（见 ARCHITECTURE.md §4/§6）
-- 确定实施任务分解 T1-T9 与接口定义（见 IMPLEMENTATION_PLAN.md）
-
-### 修复
-- 无
-
-### 已知问题
-- 无（引用 TECH_DEBT 对应 ID）
-
-### 回滚方式
-- 尚未建立版本控制；首次 git init 后回滚方式改为：
-  命令：git checkout v<上一版本标签>
