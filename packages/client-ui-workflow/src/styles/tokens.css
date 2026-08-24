@@ -102,29 +102,48 @@ body[data-ds-dark-theme] {
   position: relative;
 }
 
-/* 视图容器：默认隐藏，仅当 html 激活属性存在且无互斥面板时显示 */
+/* 视图容器：默认隐藏 */
 [data-dsh-workflow-view] {
-  position: absolute;
-  inset: 0;
   display: none;
-  flex-direction: column;
-  z-index: 60;
+  flex-direction: row;
+  position: relative;
+  height: 100%;
   overflow: hidden;
   background: var(--dsw-alias-bg-base);
   color: var(--dsw-alias-label-primary);
   font-family: var(--font-sans);
 }
 
-/* 激活态：排他守卫（task-board / ssh 任一激活时让位） */
-html[data-dsh-workflow-active]:not([data-dsh-taskboard-active]):not([data-dsh-ssh-active]) [data-dsh-workflow-view] {
-  display: flex;
-  animation: dsw-view-enter 320ms cubic-bezier(.32, .72, 0, 1);
+/* 激活态：中栏变为横向双列布局（中：会话页面，右：工作流工作台），排他守卫生效 */
+html[data-dsh-workflow-active]:not([data-dsh-taskboard-active]):not([data-dsh-ssh-active]) [data-pane='conversation'],
+html[data-dsh-workflow-active]:not([data-dsh-taskboard-active]):not([data-dsh-ssh-active]) [class*='centerCol'] {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: stretch !important;
+  overflow: hidden !important;
+  width: 100% !important;
 }
 
-/* 隐藏宿主对话内容（属性级 + !important，参照 task-board board.module.css 同类规则） */
+/* 会话区域：保留显示，占据中栏左侧 */
 html[data-dsh-workflow-active]:not([data-dsh-taskboard-active]):not([data-dsh-ssh-active]) [data-pane='conversation'] > :not([data-dsh-workflow-view]),
 html[data-dsh-workflow-active]:not([data-dsh-taskboard-active]):not([data-dsh-ssh-active]) [class*='centerCol'] > :not([data-dsh-workflow-view]) {
-  display: none !important;
+  flex: 1 1 0 !important;
+  min-width: 320px !important;
+  height: 100% !important;
+  overflow: hidden !important;
+  position: relative !important;
+}
+
+/* 工作流工作台：占据中栏右侧，支持自由宽度拖拽调节 */
+html[data-dsh-workflow-active]:not([data-dsh-taskboard-active]):not([data-dsh-ssh-active]) [data-dsh-workflow-view] {
+  display: flex !important;
+  flex: 0 0 var(--dsw-workflow-width, 60%) !important;
+  min-width: 420px !important;
+  max-width: calc(100% - 320px) !important;
+  height: 100% !important;
+  border-left: 1px solid var(--dsw-alias-border-l1) !important;
+  z-index: 40 !important;
+  animation: dsw-view-enter 240ms cubic-bezier(.32, .72, 0, 1);
 }
 
 @keyframes dsw-view-enter {

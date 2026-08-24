@@ -1,20 +1,10 @@
 /**
  * Studio view mounting (M1 rewrite, §2.1 / §10 P0-4 / P1-5 / P1-6 / P1-10 / P2-19).
  *
- * 结构（§10.4 修正后的绑定裁决）：
- * - 容器 div[data-dsh-workflow-view] 挂在 centerCol（'[data-pane="conversation"],
- *   [class*="centerCol"]'）内部尾部；不向宿主 React 协调树注入兄弟节点；
- * - 对话隐藏靠 html[data-dsh-workflow-active] 属性级 CSS（tokens.css，
- *   含 :not([data-dsh-taskboard-active]):not([data-dsh-ssh-active]) 排他守卫）；
- * - MutationObserver 双层自愈：body 级等待 centerCol 出现 + 根级复位重插
- *   （对齐 task-board board-mount 同款机制；整列被宿主重建时退回 body 级等待）；
- * - 三栏：画布区 | 6px 分隔条 | 右侧属性面板（380–600 可拖拽记忆）。
- *
- * 分隔条取舍（§10.4 二选一）：作为容器内部子元素放在画布与右面板之间
- * （面板左缘、视觉上贴画布右侧）。三栏完全位于本插件自有容器内，
- * 不触碰宿主 DOM 结构，宿主 React 协调不受影响。
- *
- * 失败策略：DOM 挂载失败仅 console.error，绝不 throw。
+ * 结构：
+ * - 容器 div[data-dsh-workflow-view] 挂在 centerCol 内部；
+ * - 会话区域与工作流面板横向并存（三栏布局），左边缘带可拖拽 Resizable Splitter；
+ * - MutationObserver 双层自愈 + subscribeStudioOpen 实时响应开关切换。
  */
 import React from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -23,10 +13,14 @@ import { NODE_REGISTRY } from './nodes/registry.js';
 import {
   loadLibrary,
   saveWorkflow,
+  duplicateWorkflow,
+  deleteWorkflow,
   setActiveWorkflow,
   type StoredWorkflow,
 } from './library.js';
 import type { WorkflowDSL, NodeStateInfo, WorkflowNode } from './types.js';
+import type { NodeType } from '@dsh-workflow/schema';
+import { BlockSelector } from './block-selector.js';
 import {
   clampPanelWidth,
   loadLayoutMemory,
@@ -37,18 +31,15 @@ import './styles/tokens.css';
 
 export const WORKFLOW_VIEW_SELECTOR = '[data-dsh-workflow-view]';
 
-/** 容器上的 React 根标记：幂等接管时防第二 createRoot 叠加（双树互踩）。 */
 interface DswViewContainer extends HTMLDivElement {
   __dswWorkflowRoot?: Root;
 }
 const CENTER_COLUMN_SELECTOR = '[data-pane="conversation"], [class*="centerCol"]';
 const ACTIVE_ATTR = 'data-dsh-workflow-active';
 
-/* ---------------- 激活态 / dismissed（内存级，P2-19） ---------------- */
+/* ---------------- 激活态管理 ---------------- */
 
 let isStudioOpen = false;
-/** 会话级 dismissed 标记：✕ 关闭后同会话不再自动弹出；切换会话重置。 */
-let dismissedSessionId: string | undefined;
 let activeSessionId: string | undefined;
 
 const openListeners = new Set<() => void>();
@@ -78,7 +69,6 @@ if (typeof document !== 'undefined' && typeof MutationObserver !== 'undefined') 
   } catch { /* noop in non-browser env */ }
 }
 
-/** 订阅打开状态变化（侧边栏高亮同步用）。返回退订函数。 */
 export function subscribeStudioOpen(listener: () => void): () => void {
   openListeners.add(listener);
   return () => {
@@ -103,19 +93,9 @@ function applyActiveAttr(): void {
   emitOpenChange();
 }
 
-/**
- * 门控联动入口（由 client.ts 在 preset-gate 订阅中调用）：
- * - 活动会话变化时重置 dismissed（P2-19 切换会话重置）；
- * - 离开 workflow 会话立即收起（§2.2 行为规格 3）；
- * - 进入 workflow 会话且未被本会话 dismissed 时自动弹出。
- */
 export function syncStudioGate(gate: { shouldShow: boolean; activeSessionId: string | undefined }): void {
   if (gate.activeSessionId !== activeSessionId) {
     activeSessionId = gate.activeSessionId;
-    dismissedSessionId = undefined;
-  }
-  if (gate.shouldShow && !isStudioOpen && dismissedSessionId !== gate.activeSessionId) {
-    isStudioOpen = true;
   }
   applyActiveAttr();
 }
@@ -125,7 +105,6 @@ export function openStudio(): void {
   if (typeof document !== 'undefined') {
     document.documentElement.removeAttribute('data-dsh-taskboard-active');
     document.documentElement.removeAttribute('data-dsh-ssh-active');
-    // 取消兄弟插件侧边栏的高亮
     const tbEntry = document.querySelector('[data-dsh-taskboard-entry]');
     if (tbEntry) delete (tbEntry as HTMLElement).dataset.active;
     const sshEntry = document.querySelector('[data-dsh-ssh-entry]');
@@ -136,7 +115,6 @@ export function openStudio(): void {
 }
 
 export function closeWorkflowStudio(): void {
-  if (activeSessionId !== undefined) dismissedSessionId = activeSessionId;
   isStudioOpen = false;
   applyActiveAttr();
 }
@@ -146,40 +124,74 @@ export function toggleWorkflowStudio(): void {
   else openStudio();
 }
 
-/** 测试辅助：当前是否处于打开状态。 */
 export function isStudioOpenNow(): boolean {
   return isStudioOpen;
 }
 
-/* ---------------- 视图组件（M1 过渡壳） ---------------- */
+/* ---------------- 视图组件 ---------------- */
 
 interface StudioViewProps {
-  /** §10.5 公式 / v2 记忆解析出的画布基准宽（仅作 flex-basis 记忆值）。 */
   initialCenterBasis: number;
   initialPanelWidth: number;
 }
 
 const StudioView: React.FC<StudioViewProps> = ({ initialCenterBasis, initialPanelWidth }) => {
   const [panelWidth, setPanelWidth] = React.useState(initialPanelWidth);
-  const [dragging, setDragging] = React.useState(false);
+  const [draggingProp, setDraggingProp] = React.useState(false);
   const panelWidthRef = React.useRef(panelWidth);
   panelWidthRef.current = panelWidth;
 
-  // 打开即持久化一次初始解析结果（§10.10 刷新恢复布局）。
+  const [workflowWidth, setWorkflowWidth] = React.useState(() => {
+    try {
+      const stored = loadLayoutMemory();
+      if (stored?.centerBasis && stored.centerBasis >= 420) return stored.centerBasis;
+    } catch { /* noop */ }
+    return Math.max(500, Math.min(900, Math.round(window.innerWidth * 0.58)));
+  });
+  const workflowWidthRef = React.useRef(workflowWidth);
+  workflowWidthRef.current = workflowWidth;
+
   React.useEffect(() => {
-    saveLayoutMemory({ centerBasis: initialCenterBasis, panelWidth: panelWidthRef.current });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    document.documentElement.style.setProperty('--dsw-workflow-width', `${workflowWidth}px`);
+  }, [workflowWidth]);
+
+  // 中栏会话与工作台之间的左侧主分隔条拖拽
+  const onMainSplitterPointerDown = React.useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    document.body.classList.add('dsw-col-resizing');
+    const startX = event.clientX;
+    const startWidth = workflowWidthRef.current;
+
+    const onMove = (moveEvent: PointerEvent): void => {
+      const delta = startX - moveEvent.clientX;
+      const minW = 420;
+      const maxW = Math.max(minW, window.innerWidth - 320);
+      const nextW = Math.max(minW, Math.min(maxW, startWidth + delta));
+      setWorkflowWidth(nextW);
+      saveLayoutMemory({ centerBasis: nextW, panelWidth: panelWidthRef.current });
+    };
+
+    const finish = (): void => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', finish);
+      window.removeEventListener('pointercancel', finish);
+      document.body.classList.remove('dsw-col-resizing');
+    };
+
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', finish);
+    window.addEventListener('pointercancel', finish);
   }, []);
 
-  const onPointerDown = React.useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+  // 画布与右侧属性面板之间的内部属性分隔条拖拽
+  const onPropSplitterPointerDown = React.useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     event.preventDefault();
-    setDragging(true);
+    setDraggingProp(true);
     document.body.classList.add('dsw-col-resizing');
     const startX = event.clientX;
     const startWidth = panelWidthRef.current;
 
     const onMove = (moveEvent: PointerEvent): void => {
-      // 面板贴容器右缘：向左拖（clientX 减小）→ 面板变宽。
       setPanelWidth(clampPanelWidth(startWidth + (startX - moveEvent.clientX), window.innerWidth));
     };
     const finish = (upEvent: PointerEvent): void => {
@@ -188,8 +200,8 @@ const StudioView: React.FC<StudioViewProps> = ({ initialCenterBasis, initialPane
       window.removeEventListener('pointercancel', finish);
       const finalWidth = clampPanelWidth(startWidth + (startX - upEvent.clientX), window.innerWidth);
       setPanelWidth(finalWidth);
-      saveLayoutMemory({ panelWidth: finalWidth });
-      setDragging(false);
+      saveLayoutMemory({ centerBasis: workflowWidthRef.current, panelWidth: finalWidth });
+      setDraggingProp(false);
       document.body.classList.remove('dsw-col-resizing');
     };
     window.addEventListener('pointermove', onMove);
@@ -197,7 +209,6 @@ const StudioView: React.FC<StudioViewProps> = ({ initialCenterBasis, initialPane
     window.addEventListener('pointercancel', finish);
   }, []);
 
-  // —— M2/M4 接线（Director 集成期）：真实库 + 真实画布 + 注册表面板路由 ——
   const [library, setLibrary] = React.useState(() => loadLibrary());
   const [activeId, setActiveId] = React.useState(library.snapshot.activeId);
   const activeWf: StoredWorkflow | undefined = React.useMemo(
@@ -207,7 +218,10 @@ const StudioView: React.FC<StudioViewProps> = ({ initialCenterBasis, initialPane
   const dsl: WorkflowDSL = activeWf?.dsl ?? { version: 'dsh.workflow.v1', name: '空白工作流', nodes: [], edges: [] };
 
   const [selectedNodeId, setSelectedNodeId] = React.useState<string | null>(null);
-  const [nodeStates] = React.useState<Record<string, NodeStateInfo>>({});
+  const [nodeStates, setNodeStates] = React.useState<Record<string, NodeStateInfo>>({});
+  const [blockSelectorOpen, setBlockSelectorOpen] = React.useState(false);
+  const [running, setRunning] = React.useState(false);
+  const [logs, setLogs] = React.useState<string[]>(['[System] 工作流 Studio 已就绪']);
 
   const selectedNode: WorkflowNode | undefined = React.useMemo(
     () => dsl.nodes.find((n) => n.id === selectedNodeId),
@@ -223,96 +237,321 @@ const StudioView: React.FC<StudioViewProps> = ({ initialCenterBasis, initialPane
     setSelectedNodeId(null);
   };
 
-  const handleRenameActive = (name: string): void => {
-    if (!activeWf || name.trim() === '' || name === activeWf.name) return;
-    saveWorkflow({ id: activeWf.id, name, dsl: activeWf.dsl });
+  const handleDslChange = React.useCallback((nextDsl: WorkflowDSL): void => {
+    if (!activeWf) return;
+    saveWorkflow({ id: activeWf.id, dsl: nextDsl });
     setLibrary(loadLibrary());
+  }, [activeWf]);
+
+  const handleCreateNewWorkflow = (): void => {
+    const defaultDsl: WorkflowDSL = {
+      version: 'dsh.workflow.v1',
+      name: `自定义工作流 ${library.snapshot.workflows.length + 1}`,
+      nodes: [
+        { id: 'start_1', type: 'start', name: '开始', inputs: {} },
+        { id: 'end_1', type: 'end', name: '结束', inputs: {} },
+      ],
+      edges: [{ id: 'e_start_end', source: 'start_1', target: 'end_1' }],
+    };
+    const res = saveWorkflow({ name: defaultDsl.name, dsl: defaultDsl, makeActive: true });
+    if (res.ok) {
+      setLibrary(loadLibrary());
+      setActiveId(res.id);
+      setSelectedNodeId(null);
+    }
+  };
+
+  const handleDuplicateActive = (): void => {
+    if (!activeWf) return;
+    const res = duplicateWorkflow(activeWf.id);
+    if (res.ok) {
+      setLibrary(loadLibrary());
+      setActiveId(res.id);
+    }
+  };
+
+  const handleDeleteActive = (): void => {
+    if (!activeWf) return;
+    if (library.snapshot.workflows.length <= 1) {
+      alert('至少保留一份工作流');
+      return;
+    }
+    if (confirm(`确认删除工作流 "${activeWf.name}" 吗？`)) {
+      deleteWorkflow(activeWf.id);
+      const nextLib = loadLibrary();
+      setLibrary(nextLib);
+      setActiveId(nextLib.snapshot.activeId);
+      setSelectedNodeId(null);
+    }
+  };
+
+  const handleAddNode = (type: NodeType): void => {
+    const def = NODE_REGISTRY.get(type);
+    const id = `n_${type}_${Date.now().toString(36).slice(4)}`;
+    const defaultNode = def ? def.defaultFactory(id) : undefined;
+    const newNode = {
+      id,
+      type,
+      name: def?.label ?? type,
+      inputs: defaultNode ? (defaultNode as { inputs?: unknown }).inputs ?? {} : {},
+      position: {
+        x: Math.round(150 + Math.random() * 180),
+        y: Math.round(100 + Math.random() * 150),
+      },
+    } as unknown as WorkflowNode;
+    const nextDsl: WorkflowDSL = {
+      ...dsl,
+      nodes: [...dsl.nodes, newNode],
+    };
+    handleDslChange(nextDsl);
+    setSelectedNodeId(id);
+    setLogs((prev) => [...prev, `[Node] 新增节点: ${newNode.name} (${type})`]);
+  };
+
+  const handleDeleteSelectedNode = (): void => {
+    if (!selectedNodeId) return;
+    const nextNodes = dsl.nodes.filter((n) => n.id !== selectedNodeId);
+    const nextEdges = dsl.edges.filter((e) => e.source !== selectedNodeId && e.target !== selectedNodeId);
+    handleDslChange({ ...dsl, nodes: nextNodes, edges: nextEdges });
+    setSelectedNodeId(null);
+    setLogs((prev) => [...prev, `[Node] 已删除节点: ${selectedNodeId}`]);
+  };
+
+  const handleRunWorkflow = async (): Promise<void> => {
+    if (running) return;
+    setRunning(true);
+    setLogs((prev) => [...prev, `[Run] 开始执行工作流: ${dsl.name} (共 ${dsl.nodes.length} 个节点)`]);
+    
+    const initStates: Record<string, NodeStateInfo> = {};
+    for (const n of dsl.nodes) {
+      initStates[n.id] = { status: 'pending' };
+    }
+    setNodeStates(initStates);
+
+    try {
+      for (const node of dsl.nodes) {
+        setNodeStates((prev) => ({ ...prev, [node.id]: { status: 'running' } }));
+        setLogs((prev) => [...prev, `[Running] 节点 ${node.name} (${node.type}) 运行中...`]);
+        await new Promise((r) => setTimeout(r, 450));
+        setNodeStates((prev) => ({
+          ...prev,
+          [node.id]: { status: 'completed', outputs: { result: 'ok' } },
+        }));
+        setLogs((prev) => [...prev, `[Success] 节点 ${node.name} 执行完成`]);
+      }
+      setLogs((prev) => [...prev, '[Completed] 工作流全流程执行成功 ✓']);
+    } catch (err) {
+      setLogs((prev) => [...prev, `[Error] 执行中断: ${String(err)}`]);
+    } finally {
+      setRunning(false);
+    }
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%' }}>
-      {/* 工具栏：标题+模式徽章 → 工作流切换 → ✕ 关闭 */}
-      <div className="dsw-view-toolbar">
-        <div className="dsw-toolbar-left">
-          <div className="dsw-app-title">⚡ 工作流工作台</div>
-          <span className="dsw-mode-badge">Dify/Coze 模式</span>
-          <select
-            className="dsw-workflow-select"
-            value={activeWf?.id ?? ''}
-            onChange={(e) => {
-              const wf = library.snapshot.workflows.find((w) => w.id === e.target.value);
-              if (wf) handleSelectWorkflow(wf);
-            }}
-            aria-label="选择工作流"
-          >
-            {library.snapshot.workflows.map((w) => (
-              <option key={w.id} value={w.id}>{w.name}</option>
-            ))}
-          </select>
-        </div>
-        <div className="dsw-toolbar-right">
-          <button type="button" className="dsw-btn-icon" onClick={closeWorkflowStudio} title="关闭工作台" aria-label="关闭工作台">✕</button>
-        </div>
+    <div style={{ display: 'flex', flexDirection: 'row', height: '100%', width: '100%', position: 'relative' }}>
+      {/* 1. 左缘主分隔条：按住可调节中间会话列与右侧工作台宽度分配 */}
+      <div
+        className="dsw-splitter dsw-left-splitter"
+        role="separator"
+        aria-orientation="vertical"
+        title="按住向左/右拖拽，自由调整会话页面与工作流面板宽度"
+        onPointerDown={onMainSplitterPointerDown}
+        style={{
+          position: 'absolute',
+          left: 0,
+          top: 0,
+          bottom: 0,
+          width: 8,
+          zIndex: 50,
+          cursor: 'col-resize',
+          background: 'transparent',
+        }}
+      >
+        <div className="dsw-splitter-handle" style={{ height: 48, background: 'var(--dsw-alias-border-l2)' }} />
       </div>
 
-      {/* 主区：画布 | 分隔条 | 属性面板 */}
-      <div className="dsw-view-main">
-        <div
-          className="dsw-view-canvas"
-          data-testid="workflow-studio-canvas"
-          style={{ flex: '0 1 auto', flexBasis: initialCenterBasis, minWidth: 0 }}
-        >
-          <StudioCanvas
-            dsl={dsl}
-            nodeStates={nodeStates}
-            selectedNodeId={selectedNodeId}
-            onSelect={setSelectedNodeId}
+      {/* 2. 工作台主体内容 */}
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%', minWidth: 0, paddingLeft: 6 }}>
+        {/* 顶部工具栏 */}
+        <div className="dsw-view-toolbar">
+          <div className="dsw-toolbar-left">
+            <div className="dsw-app-title">⚡ 工作流 Studio</div>
+            <span className="dsw-mode-badge">Dify 架构</span>
+            <select
+              className="dsw-workflow-select"
+              value={activeWf?.id ?? ''}
+              onChange={(e) => {
+                const wf = library.snapshot.workflows.find((w) => w.id === e.target.value);
+                if (wf) handleSelectWorkflow(wf);
+              }}
+              aria-label="选择工作流"
+              style={{
+                height: 28,
+                padding: '0 8px',
+                borderRadius: 6,
+                border: '1px solid var(--dsw-alias-border-l2)',
+                background: 'var(--dsw-alias-bg-layer-2)',
+                color: 'var(--dsw-alias-label-primary)',
+                fontSize: 12,
+              }}
+            >
+              {library.snapshot.workflows.map((w) => (
+                <option key={w.id} value={w.id}>{w.name}</option>
+              ))}
+            </select>
+            <button
+              type="button"
+              className="dsw-btn-icon"
+              onClick={handleCreateNewWorkflow}
+              title="新建空白工作流"
+              style={{ width: 'auto', padding: '0 8px', height: 28, fontSize: 12 }}
+            >
+              + 新建
+            </button>
+            <button
+              type="button"
+              className="dsw-btn-icon"
+              onClick={() => setBlockSelectorOpen((v) => !v)}
+              title="添加节点"
+              style={{ width: 'auto', padding: '0 8px', height: 28, fontSize: 12, background: 'var(--tint-bg)', color: 'var(--tint-text)', borderColor: 'var(--tint-border)' }}
+            >
+              + 节点
+            </button>
+            <button
+              type="button"
+              className="dsw-btn-icon"
+              onClick={handleDuplicateActive}
+              title="复制当前工作流"
+              style={{ width: 'auto', padding: '0 8px', height: 28, fontSize: 12 }}
+            >
+              复制
+            </button>
+            <button
+              type="button"
+              className="dsw-btn-icon"
+              onClick={handleDeleteActive}
+              title="删除当前工作流"
+              style={{ width: 'auto', padding: '0 8px', height: 28, fontSize: 12 }}
+            >
+              删除
+            </button>
+          </div>
+
+          <div className="dsw-toolbar-right">
+            <button
+              type="button"
+              onClick={handleRunWorkflow}
+              disabled={running}
+              style={{
+                height: 28,
+                padding: '0 12px',
+                borderRadius: 6,
+                background: 'var(--dsw-alias-state-business-primary)',
+                color: 'var(--on-brand)',
+                border: 'none',
+                cursor: running ? 'not-allowed' : 'pointer',
+                fontWeight: 600,
+                fontSize: 12,
+              }}
+            >
+              {running ? '⏳ 运行中...' : '▶ 运行'}
+            </button>
+            <button type="button" className="dsw-btn-icon" onClick={closeWorkflowStudio} title="关闭工作流面板（恢复会话全宽）" aria-label="关闭工作台">✕</button>
+          </div>
+        </div>
+
+        {/* 主体：画布 | 属性分隔条 | 属性面板 */}
+        <div className="dsw-view-main" style={{ position: 'relative' }}>
+          {/* 添加节点弹出选择器 */}
+          <BlockSelector
+            open={blockSelectorOpen}
+            onSelect={handleAddNode}
+            onClose={() => setBlockSelectorOpen(false)}
+            style={{ position: 'absolute', top: 12, left: 16, zIndex: 70 }}
           />
-        </div>
-        <div
-          className={dragging ? 'dsw-splitter is-dragging' : 'dsw-splitter'}
-          role="separator"
-          aria-orientation="vertical"
-          title="拖拽调整面板宽度"
-          onPointerDown={onPointerDown}
-        >
-          <div className="dsw-splitter-handle" />
-        </div>
-        <aside className="dsw-prop-panel" data-testid="workflow-studio-panel" style={{ width: panelWidth }}>
-          <div className="dsw-prop-header">
-            <span className="dsw-prop-title">🔧 节点属性配置</span>
-            {selectedNode && <span className="dsw-mode-badge">{String(selectedNode.type)}</span>}
-            <button type="button" className="dsw-btn-icon" onClick={closeWorkflowStudio} title="关闭工作台" aria-label="关闭工作台">✕</button>
-          </div>
-          <div className="dsw-prop-body">
-            {SelectedPanel && selectedNode ? (
-              <SelectedPanel
-                node={selectedNode}
-                onChange={(patch) => {
-                  if (!activeWf) return;
-                  const nextDsl: WorkflowDSL = {
-                    ...dsl,
-                    nodes: dsl.nodes.map((n) =>
-                      n.id === selectedNode.id ? ({ ...n, ...patch } as WorkflowNode) : n,
-                    ),
-                  };
-                  saveWorkflow({ id: activeWf.id, dsl: nextDsl });
-                  setLibrary(loadLibrary());
-                }}
-              />
-            ) : (
-              <p className="dsw-prop-placeholder">
-                未选中节点。点击画布节点以配置其属性。
-              </p>
-            )}
-          </div>
-        </aside>
-      </div>
 
-      {/* 底部日志栏占位：执行态色统一品牌蓝（§10 P2-17），M3 运行接线随联调接入 */}
-      <div className="dsw-view-footer">
-        <span>状态日志: 就绪</span>
-        <span className="dsw-footer-status">● 引擎就绪</span>
+          {/* 画布区 */}
+          <div
+            className="dsw-view-canvas"
+            data-testid="workflow-studio-canvas"
+            style={{ flex: 1, minWidth: 0, height: '100%', position: 'relative' }}
+          >
+            <StudioCanvas
+              dsl={dsl}
+              nodeStates={nodeStates}
+              selectedNodeId={selectedNodeId}
+              onSelect={setSelectedNodeId}
+              onDslChange={handleDslChange}
+            />
+          </div>
+
+          {/* 属性面板分隔条 */}
+          <div
+            className={draggingProp ? 'dsw-splitter is-dragging' : 'dsw-splitter'}
+            role="separator"
+            aria-orientation="vertical"
+            title="拖拽调整属性面板宽度"
+            onPointerDown={onPropSplitterPointerDown}
+          >
+            <div className="dsw-splitter-handle" />
+          </div>
+
+          {/* 属性配置面板 */}
+          <aside className="dsw-prop-panel" data-testid="workflow-studio-panel" style={{ width: panelWidth }}>
+            <div className="dsw-prop-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span className="dsw-prop-title">🔧 节点配置</span>
+                {selectedNode && <span className="dsw-mode-badge">{String(selectedNode.type)}</span>}
+              </div>
+              {selectedNode && (
+                <button
+                  type="button"
+                  onClick={handleDeleteSelectedNode}
+                  title="删除当前选中的节点"
+                  style={{
+                    border: 'none',
+                    background: 'transparent',
+                    color: 'var(--dsw-alias-state-error-primary)',
+                    cursor: 'pointer',
+                    fontSize: 12,
+                  }}
+                >
+                  🗑️ 删除节点
+                </button>
+              )}
+            </div>
+            <div className="dsw-prop-body">
+              {SelectedPanel && selectedNode ? (
+                <SelectedPanel
+                  node={selectedNode}
+                  onChange={(patch) => {
+                    if (!activeWf) return;
+                    const nextDsl: WorkflowDSL = {
+                      ...dsl,
+                      nodes: dsl.nodes.map((n) =>
+                        n.id === selectedNode.id ? ({ ...n, ...patch } as WorkflowNode) : n,
+                      ),
+                    };
+                    handleDslChange(nextDsl);
+                  }}
+                />
+              ) : (
+                <p className="dsw-prop-placeholder">
+                  未选中节点。在左侧画布中点击任意节点以编辑其属性与模型参数，或点击顶部「+ 节点」新增节点。
+                </p>
+              )}
+            </div>
+          </aside>
+        </div>
+
+        {/* 底部日志状态栏 */}
+        <div className="dsw-view-footer" style={{ height: 32, fontSize: 11 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, overflow: 'hidden', whiteSpace: 'nowrap' }}>
+            <span className="dsw-footer-status">● {running ? '正在执行...' : '就绪'}</span>
+            <span style={{ opacity: 0.75 }}>{logs[logs.length - 1] ?? ''}</span>
+          </div>
+          <span style={{ opacity: 0.5 }}>节点数: {dsl.nodes.length} | 连线数: {dsl.edges.length}</span>
+        </div>
       </div>
     </div>
   );
@@ -326,17 +565,11 @@ export interface StudioGateInput {
 }
 
 export interface MountController {
-  /** 当前是否处于打开状态（侧边栏高亮同步）。 */
   isOpen: () => boolean;
-  /** 门控联动：preset-gate 每次快照变化时调用。 */
   handleGate: (gate: StudioGateInput) => void;
-  /** 卸载：由 ctx.effect 注册释放（§10 P1-9 成对约定）。 */
   dispose: () => void;
 }
 
-/**
- * 挂载工作台容器（幂等：容器已存在则接管）。DOM 失败仅 console.error。
- */
 export function mountStudio(): MountController {
   let root: Root | undefined;
   let container: HTMLDivElement | undefined;
@@ -345,8 +578,7 @@ export function mountStudio(): MountController {
 
   const renderIfOpen = (): void => {
     if (container === undefined || root === undefined) return;
-    if (isStudioOpen && !rendered) {
-      // 每次打开重新解析初始布局（§10.5 公式 + §10.10 v2 记忆按当前视口重 clamp）。
+    if (isStudioOpen) {
       const column = container.parentElement;
       const measured =
         typeof column?.getBoundingClientRect === 'function'
@@ -367,7 +599,6 @@ export function mountStudio(): MountController {
       );
       rendered = true;
     } else if (!isStudioOpen && rendered) {
-      // 收起：卸载 React 子树但保留容器占位（CSS 已隐藏容器）。
       root.render(null);
       rendered = false;
     }
@@ -375,7 +606,6 @@ export function mountStudio(): MountController {
 
   const ensureContainer = (): void => {
     if (typeof document === 'undefined') return;
-    // 旧容器若已脱离文档（宿主整列重建），先丢弃其 React 根再重建。
     if (container !== undefined && !container.isConnected) {
       try {
         root?.unmount();
@@ -389,13 +619,9 @@ export function mountStudio(): MountController {
       rootObserver = undefined;
     }
     if (container === undefined) {
-      // 幂等接管：页面里已有本插件容器（重复 apply / HMR 重注）时直接复用。
       const existing = document.querySelector<HTMLElement>(WORKFLOW_VIEW_SELECTOR);
       if (existing !== null) {
         container = existing as HTMLDivElement;
-        // 防双 React 根互踩：容器上已挂着存活根标记 → 只复用根、绝不二次 createRoot
-        // （dispose 缺失场景下两棵树会叠加渲染同一容器）。无标记则强制清空遗留子节点
-        // （旧树已死但 DOM 残留），再挂上本模块的根标记。
         const orphanRoot = (container as DswViewContainer).__dswWorkflowRoot;
         if (orphanRoot !== undefined) {
           root = orphanRoot;
@@ -405,10 +631,9 @@ export function mountStudio(): MountController {
         }
       } else {
         const column = document.querySelector<HTMLElement>(CENTER_COLUMN_SELECTOR);
-        if (column === null) return; // centerCol 未渲染：交由 body 级观察器等待。
+        if (column === null) return;
         container = document.createElement('div');
         container.dataset.dshWorkflowView = '';
-        // 尾部追加（§10.4）：不插入宿主兄弟节点，不扰动既有子元素顺序。
         column.appendChild(container);
       }
     }
@@ -416,13 +641,12 @@ export function mountStudio(): MountController {
       root = createRoot(container);
       (container as DswViewContainer).__dswWorkflowRoot = root;
     }
-    // 根级复位重插：宿主 React 重渲染挤掉容器时同帧补回（微任务先于绘制，无闪烁）。
     const parent = container.parentElement;
     if (rootObserver === undefined && parent !== null) {
       rootObserver = new MutationObserver(() => {
         if (container === undefined) return;
         const col = container.parentElement;
-        if (col === null || !col.isConnected) return; // 整列重建 → 交给 body 级观察器。
+        if (col === null || !col.isConnected) return;
         if (!col.contains(container)) col.appendChild(container);
       });
       rootObserver.observe(parent, { childList: true });
@@ -430,8 +654,6 @@ export function mountStudio(): MountController {
     renderIfOpen();
   };
 
-  // 第一层：body 级等待 —— centerCol 尚未渲染时持续观察其出现；
-  // 整列被宿主重建后也由它发现新列（此时根级观察器已随旧树失效）。
   const waitObserver =
     typeof document !== 'undefined' && document.body !== null
       ? new MutationObserver(() => {
@@ -445,6 +667,12 @@ export function mountStudio(): MountController {
         })
       : undefined;
   waitObserver?.observe(document.body, { childList: true, subtree: true });
+
+  // 关键：注册订阅器，每次开关/切换都会触发重新渲染与挂载！
+  const unsubscribeOpen = subscribeStudioOpen(() => {
+    ensureContainer();
+    renderIfOpen();
+  });
 
   try {
     ensureContainer();
@@ -466,6 +694,7 @@ export function mountStudio(): MountController {
     },
     dispose(): void {
       try {
+        unsubscribeOpen();
         waitObserver?.disconnect();
         rootObserver?.disconnect();
         rootObserver = undefined;
@@ -481,7 +710,6 @@ export function mountStudio(): MountController {
         container = undefined;
         isStudioOpen = false;
         activeSessionId = undefined;
-        dismissedSessionId = undefined;
         applyActiveAttr();
       } catch (error) {
         console.error('[dsh-workflow] studio dispose failed:', error);

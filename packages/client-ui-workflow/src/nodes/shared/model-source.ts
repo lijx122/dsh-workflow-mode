@@ -16,6 +16,16 @@ const PROBE_KEYS = [
   "dsh-client-ui-model-selection",
 ] as const;
 
+/** 默认回退内置模型列表（当宿主环境未暴露任何模型注册表时兜底）。 */
+export const DEFAULT_FALLBACK_MODELS: ModelOption[] = [
+  { id: "deepseek-chat", label: "DeepSeek V3 (deepseek-chat)" },
+  { id: "deepseek-reasoner", label: "DeepSeek R1 (deepseek-reasoner)" },
+  { id: "gemini-3.7-flash-high", label: "Gemini 3.7 Flash High (DSH Default)" },
+  { id: "claude-3-7-sonnet-20250219", label: "Claude 3.7 Sonnet" },
+  { id: "gpt-4o", label: "GPT-4o" },
+  { id: "qwen-plus", label: "Qwen Plus (通义千问)" },
+];
+
 /** 从候选原始值解析模型目录；只接受可辨识形状。 */
 export function parseModelCatalog(raw: unknown): ModelCatalogSnapshot {
   try {
@@ -76,6 +86,16 @@ export function probeModelCatalog(host: unknown = globalThis): ModelCatalogSnaps
       /* 单键失败不影响其余候选 */
     }
   }
+
+  // 尝试从 window.__DSH_BOOT__ 探测
+  try {
+    const boot = record.__DSH_BOOT__ as { models?: unknown; settings?: { models?: unknown } } | undefined;
+    if (boot) {
+      const bootModels = parseModelCatalog(boot.models ?? boot.settings?.models);
+      if (bootModels.available) return bootModels;
+    }
+  } catch { /* noop */ }
+
   return { available: false, models: [], source: "unavailable" };
 }
 

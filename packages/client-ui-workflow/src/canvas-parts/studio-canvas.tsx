@@ -7,10 +7,18 @@
  * - @xyflow 默认视觉由 xyflow-theme.css 的 --xy-* 变量覆盖。
  */
 import React, { useCallback, useMemo } from "react";
-import { ReactFlow, ReactFlowProvider, type Node as FlowNode, type Edge as FlowEdge, type EdgeTypes, type NodeTypes } from "@xyflow/react";
+import {
+  ReactFlow,
+  ReactFlowProvider,
+  type Node as FlowNode,
+  type Edge as FlowEdge,
+  type EdgeTypes,
+  type NodeTypes,
+  type Connection,
+} from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
-import { normalizeStatus, type WorkflowCanvasProps, type NodeStateInfo } from "../types.js";
+import { normalizeStatus, type WorkflowCanvasProps, type NodeStateInfo, type WorkflowDSL, type WorkflowEdge, type WorkflowNode } from "../types.js";
 import { NODE_REGISTRY } from "../nodes/registry.js";
 import { makeFlowCard } from "../nodes/shared/card-shell.js";
 import { StudioBranchEdge } from "./branch-edge.js";
@@ -21,10 +29,8 @@ import "./xyflow-theme.css";
 
 /** 注册表 → xyflow nodeTypes 映射（模块级构建一次）。 */
 function buildNodeTypes(): NodeTypes {
-  const map: Record<string, FlowNode["type"]> = {};
   const out: NodeTypes = {};
   for (const def of NODE_REGISTRY.values()) {
-    void map;
     out[def.type] = makeFlowCard(def) as NodeTypes[string];
   }
   return out;
@@ -37,6 +43,8 @@ export interface StudioCanvasProps extends WorkflowCanvasProps {
   /** 受控选中节点（属性面板联动）；缺省走内部选中。 */
   selectedNodeId?: string | null;
   onSelect?(nodeId: string | null): void;
+  /** DSL 实时双向同步（节点拖拽、连线新增/删除） */
+  onDslChange?(nextDsl: WorkflowDSL): void;
 }
 
 function CanvasInner({
@@ -48,15 +56,16 @@ function CanvasInner({
   fitView = true,
   selectedNodeId,
   onSelect,
+  onDslChange,
 }: StudioCanvasProps): React.ReactElement {
-  const positions = useMemo(() => layoutNodesMeasured(dsl.nodes, dsl.edges), [dsl.nodes, dsl.edges]);
+  const autoPositions = useMemo(() => layoutNodesMeasured(dsl.nodes, dsl.edges), [dsl.nodes, dsl.edges]);
 
   const flowNodes = useMemo<FlowNode[]>(() => {
     return dsl.nodes.map((node) => {
       const rawState: NodeStateInfo | { status: string } | undefined = nodeStates?.[node.id];
       const status = normalizeStatus(rawState?.status);
-      const def = NODE_REGISTRY.get(node.type);
-      const pos = positions.get(node.id) ?? { x: 0, y: 0 };
+      const customPos = (node as unknown as { position?: { x: number; y: number } }).position;
+      const pos = customPos ?? autoPositions.get(node.id) ?? { x: 0, y: 0 };
       return {
         id: node.id,
         type: node.type,
@@ -68,12 +77,10 @@ function CanvasInner({
           onNodeClick,
         },
         selected: selectedNodeId !== undefined ? selectedNodeId === node.id : undefined,
-        // 卡宽固定 240；高度交给实测（layout v2 只用估算值做首帧间距）。
         width: 240,
-        ...(def === undefined ? {} : {}),
       };
     });
-  }, [dsl.nodes, nodeStates, positions, onNodeClick, selectedNodeId]);
+  }, [dsl.nodes, nodeStates, autoPositions, onNodeClick, selectedNodeId]);
 
   const flowEdges = useMemo<FlowEdge[]>(() => {
     return dsl.edges.map((edge) => {
@@ -100,6 +107,52 @@ function CanvasInner({
     [onSelect],
   );
 
+  // 节点拖拽移动后更新 DSL 坐标
+  const handleNodeDragStop = useCallback(
+    (_event: unknown, node: FlowNode) => {
+      if (!onDslChange) return;
+      const nextNodes = dsl.nodes.map((n) =>
+        n.id === node.id
+          ? ({ ...n, position: { x: Math.round(node.position.x), y: Math.round(node.position.y) } } as unknown as WorkflowNode)
+          : n,
+      );
+      onDslChange({ ...dsl, nodes: nextNodes });
+    },
+    [dsl, onDslChange],
+  );
+
+  // 连线建立
+  const handleConnect = useCallback(
+    (connection: Connection) => {
+      if (!connection.source || !connection.target || !onDslChange) return;
+      if (connection.source === connection.target) return; // 避免自环
+      const exists = dsl.edges.some(
+        (e) => e.source === connection.source && e.target === connection.target && e.sourceHandle === (connection.sourceHandle ?? undefined)
+      );
+      if (exists) return;
+      const edgeId = `e_${connection.source}_${connection.target}_${Date.now().toString(36).slice(4)}`;
+      const newEdge: WorkflowEdge = {
+        id: edgeId,
+        source: connection.source,
+        target: connection.target,
+        sourceHandle: connection.sourceHandle ?? undefined,
+        targetHandle: connection.targetHandle ?? undefined,
+      };
+      onDslChange({ ...dsl, edges: [...dsl.edges, newEdge] });
+    },
+    [dsl, onDslChange],
+  );
+
+  // 边删除
+  const handleEdgesDelete = useCallback(
+    (deleted: FlowEdge[]) => {
+      if (!onDslChange || deleted.length === 0) return;
+      const delIds = new Set(deleted.map((d) => d.id));
+      onDslChange({ ...dsl, edges: dsl.edges.filter((e) => !delIds.has(e.id)) });
+    },
+    [dsl, onDslChange],
+  );
+
   return (
     <div
       className={"dsw-flow dsh-workflow-canvas-container " + (className ?? "")}
@@ -112,7 +165,7 @@ function CanvasInner({
           nodeTypes={NODE_TYPES}
           edgeTypes={EDGE_TYPES}
           nodesDraggable
-          nodesConnectable={false}
+          nodesConnectable
           elementsSelectable
           fitView={fitView}
           proOptions={{ hideAttribution: false }}
@@ -122,6 +175,9 @@ function CanvasInner({
             else onSelect?.(null);
           }}
           onNodeClick={handleSelect}
+          onNodeDragStop={handleNodeDragStop}
+          onConnect={handleConnect}
+          onEdgesDelete={handleEdgesDelete}
         >
           <ZoomCapsule />
           <StudioMiniMap />
