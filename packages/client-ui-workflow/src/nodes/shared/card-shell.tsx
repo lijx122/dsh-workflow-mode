@@ -44,7 +44,7 @@ function renderHandle(spec: NodeHandleSpec, key: string): React.ReactNode {
       type={spec.kind}
       position={position}
       id={spec.id}
-      isConnectable={false}
+      isConnectable={true}
       style={style}
     />
   );
