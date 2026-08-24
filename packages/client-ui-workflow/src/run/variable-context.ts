@@ -314,6 +314,24 @@ class ExprEvaluator {
 export class VariableContext {
   private store = new Map<string, Record<string, JsonValue>>();
 
+  constructor(initialEnv?: Record<string, JsonValue>) {
+    const envData: Record<string, JsonValue> = {};
+    // 注入系统/宿主环境变量（环境可用时安全读取）
+    const globalProcess = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process;
+    if (globalProcess?.env && typeof globalProcess.env === 'object') {
+      for (const [k, v] of Object.entries(globalProcess.env)) {
+        if (typeof v === 'string') envData[k] = v;
+      }
+    }
+    if (initialEnv) {
+      for (const [k, v] of Object.entries(initialEnv)) {
+        envData[k] = v;
+      }
+    }
+    this.store.set('env', envData);
+    this.store.set('$env', envData);
+  }
+
   set(nodeId: string, outputs: Record<string, JsonValue>): void {
     this.store.set(nodeId, outputs);
   }

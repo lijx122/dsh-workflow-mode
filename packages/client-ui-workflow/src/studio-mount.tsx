@@ -376,7 +376,7 @@ const StudioView: React.FC<StudioViewProps> = ({ initialCenterBasis, initialPane
         <div className="dsw-view-toolbar">
           <div className="dsw-toolbar-left">
             <div className="dsw-app-title">⚡ 工作流 Studio</div>
-            <span className="dsw-mode-badge">Dify 架构</span>
+            <span className="dsw-mode-badge">n8n Core 架构</span>
             <select
               className="dsw-workflow-select"
               value={activeWf?.id ?? ''}
@@ -504,37 +504,91 @@ const StudioView: React.FC<StudioViewProps> = ({ initialCenterBasis, initialPane
                 {selectedNode && <span className="dsw-mode-badge">{String(selectedNode.type)}</span>}
               </div>
               {selectedNode && (
-                <button
-                  type="button"
-                  onClick={handleDeleteSelectedNode}
-                  title="删除当前选中的节点"
-                  style={{
-                    border: 'none',
-                    background: 'transparent',
-                    color: 'var(--dsw-alias-state-error-primary)',
-                    cursor: 'pointer',
-                    fontSize: 12,
-                  }}
-                >
-                  🗑️ 删除节点
-                </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLogs((prev) => [...prev, `[Step Test] 测试步骤: ${selectedNode.name} (${selectedNode.type})`]);
+                      setNodeStates((prev) => ({ ...prev, [selectedNode.id]: { status: 'running' } }));
+                      setTimeout(() => {
+                        const mockOut = { result: 'ok', node: selectedNode.id, type: selectedNode.type, timestamp: Date.now() };
+                        setNodeStates((prev) => ({
+                          ...prev,
+                          [selectedNode.id]: { status: 'completed', outputs: mockOut, durationMs: 38 },
+                        }));
+                        setLogs((prev) => [...prev, `[Step Test] 步骤 ${selectedNode.name} 运行成功 ✓`]);
+                      }, 350);
+                    }}
+                    title="单独运行并调试此步骤"
+                    style={{
+                      border: '1px solid var(--tint-border)',
+                      background: 'var(--tint-bg)',
+                      color: 'var(--tint-text)',
+                      borderRadius: 6,
+                      padding: '3px 8px',
+                      cursor: 'pointer',
+                      fontSize: 11,
+                      fontWeight: 600,
+                    }}
+                  >
+                    ▶ 测试步骤
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleDeleteSelectedNode}
+                    title="删除当前选中的节点"
+                    style={{
+                      border: 'none',
+                      background: 'transparent',
+                      color: 'var(--dsw-alias-state-error-primary)',
+                      cursor: 'pointer',
+                      fontSize: 12,
+                    }}
+                  >
+                    🗑️ 删除
+                  </button>
+                </div>
               )}
             </div>
             <div className="dsw-prop-body">
               {SelectedPanel && selectedNode ? (
-                <SelectedPanel
-                  node={selectedNode}
-                  onChange={(patch) => {
-                    if (!activeWf) return;
-                    const nextDsl: WorkflowDSL = {
-                      ...dsl,
-                      nodes: dsl.nodes.map((n) =>
-                        n.id === selectedNode.id ? ({ ...n, ...patch } as WorkflowNode) : n,
-                      ),
-                    };
-                    handleDslChange(nextDsl);
-                  }}
-                />
+                <>
+                  <SelectedPanel
+                    node={selectedNode}
+                    runState={nodeStates[selectedNode.id]}
+                    onChange={(patch) => {
+                      if (!activeWf) return;
+                      const nextDsl: WorkflowDSL = {
+                        ...dsl,
+                        nodes: dsl.nodes.map((n) =>
+                          n.id === selectedNode.id ? ({ ...n, ...patch } as WorkflowNode) : n,
+                        ),
+                      };
+                      handleDslChange(nextDsl);
+                    }}
+                  />
+                  {nodeStates[selectedNode.id]?.outputs && (
+                    <div style={{ marginTop: 16, borderTop: '1px solid var(--dsw-alias-border-l1)', paddingTop: 12 }}>
+                      <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--dsw-alias-label-secondary)', marginBottom: 6 }}>
+                        📊 步骤产出数据 (Output JSON)
+                      </div>
+                      <pre style={{
+                        background: 'var(--dsw-alias-bg-layer-1)',
+                        border: '1px solid var(--dsw-alias-border-l2)',
+                        borderRadius: 6,
+                        padding: '8px 10px',
+                        fontSize: 11,
+                        fontFamily: 'var(--font-mono)',
+                        color: 'var(--dsw-alias-label-primary)',
+                        maxHeight: 140,
+                        overflowY: 'auto',
+                        margin: 0,
+                      }}>
+                        {JSON.stringify(nodeStates[selectedNode.id].outputs, null, 2)}
+                      </pre>
+                    </div>
+                  )}
+                </>
               ) : (
                 <p className="dsw-prop-placeholder">
                   未选中节点。在左侧画布中点击任意节点以编辑其属性与模型参数，或点击顶部「+ 节点」新增节点。
