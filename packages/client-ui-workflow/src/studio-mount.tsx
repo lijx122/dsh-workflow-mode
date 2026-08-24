@@ -53,6 +53,31 @@ let activeSessionId: string | undefined;
 
 const openListeners = new Set<() => void>();
 
+// 社区插件（任务看板、SSH 面板）互斥监听：一旦其他面板被激活，工作台自动收起
+if (typeof document !== 'undefined' && typeof MutationObserver !== 'undefined') {
+  const siblingPanelObserver = new MutationObserver((mutations) => {
+    for (const m of mutations) {
+      if (m.type === 'attributes') {
+        if (
+          document.documentElement.hasAttribute('data-dsh-taskboard-active') ||
+          document.documentElement.hasAttribute('data-dsh-ssh-active')
+        ) {
+          if (isStudioOpen) {
+            isStudioOpen = false;
+            applyActiveAttr();
+          }
+        }
+      }
+    }
+  });
+  try {
+    siblingPanelObserver.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-dsh-taskboard-active', 'data-dsh-ssh-active'],
+    });
+  } catch { /* noop in non-browser env */ }
+}
+
 /** 订阅打开状态变化（侧边栏高亮同步用）。返回退订函数。 */
 export function subscribeStudioOpen(listener: () => void): () => void {
   openListeners.add(listener);
@@ -96,6 +121,16 @@ export function syncStudioGate(gate: { shouldShow: boolean; activeSessionId: str
 }
 
 export function openStudio(): void {
+  // 排他互斥：打开工作流面板时，主动关闭任务看板与 SSH 面板
+  if (typeof document !== 'undefined') {
+    document.documentElement.removeAttribute('data-dsh-taskboard-active');
+    document.documentElement.removeAttribute('data-dsh-ssh-active');
+    // 取消兄弟插件侧边栏的高亮
+    const tbEntry = document.querySelector('[data-dsh-taskboard-entry]');
+    if (tbEntry) delete (tbEntry as HTMLElement).dataset.active;
+    const sshEntry = document.querySelector('[data-dsh-ssh-entry]');
+    if (sshEntry) delete (sshEntry as HTMLElement).dataset.active;
+  }
   isStudioOpen = true;
   applyActiveAttr();
 }
