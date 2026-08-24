@@ -52,9 +52,12 @@ export function StudioMiniMap(): React.ReactElement {
     const el = boxRef.current;
     const innerWidth = el?.clientWidth ?? 148;
     const innerHeight = el?.clientHeight ?? 88;
+    const container = el?.parentElement?.parentElement;
+    const containerWidth = container?.clientWidth || (typeof window !== "undefined" ? window.innerWidth : 800);
+    const containerHeight = container?.clientHeight || (typeof window !== "undefined" ? window.innerHeight : 600);
     const zoom = transform[2] || 1;
-    const viewW = window.innerWidth / zoom / (spanX / (innerWidth - PAD * 2));
-    const viewH = window.innerHeight / zoom / (spanY / (innerHeight - PAD * 2));
+    const viewW = containerWidth / zoom / (spanX / (innerWidth - PAD * 2));
+    const viewH = containerHeight / zoom / (spanY / (innerHeight - PAD * 2));
     const left = toScaleX(-transform[0] / zoom, innerWidth);
     const top = toScaleY(-transform[1] / zoom, innerHeight);
     return {
@@ -72,13 +75,16 @@ export function StudioMiniMap(): React.ReactElement {
       const rect = el.getBoundingClientRect();
       const innerWidth = rect.width;
       const innerHeight = rect.height;
+      const container = el.parentElement?.parentElement;
+      const containerWidth = container?.clientWidth || (typeof window !== "undefined" ? window.innerWidth : 800);
+      const containerHeight = container?.clientHeight || (typeof window !== "undefined" ? window.innerHeight : 600);
       const zoom = transform[2] || 1;
       const graphX = minX + ((clientX - rect.left - PAD) / (innerWidth - PAD * 2)) * spanX;
       const graphY = minY + ((clientY - rect.top - PAD) / (innerHeight - PAD * 2)) * spanY;
       const next = getViewport();
       setViewport({
-        x: -(graphX * zoom) + window.innerWidth / 2,
-        y: -(graphY * zoom) + window.innerHeight / 2,
+        x: -(graphX * zoom) + containerWidth / 2,
+        y: -(graphY * zoom) + containerHeight / 2,
         zoom: next.zoom,
       });
     },

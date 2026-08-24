@@ -82,7 +82,7 @@ function CanvasInner({
         width: 250,
       };
     });
-  }, [dsl.nodes, nodeStates, autoPositions, onSelect, selectedNodeId]);
+  }, [dsl.nodes, nodeStates, autoPositions, onSelect]);
 
   const initialFlowEdges = useMemo<FlowEdge[]>(() => {
     return dsl.edges.map((edge) => {
@@ -105,10 +105,21 @@ function CanvasInner({
   const [nodes, setNodes, onNodesChange] = useNodesState(initialFlowNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialFlowEdges);
 
-  // 当外部 dsl / 选中项变化时同步到本地状态
+  // 当外部 dsl 变化时同步到本地状态
   React.useEffect(() => {
     setNodes(initialFlowNodes);
   }, [initialFlowNodes, setNodes]);
+
+  // 当外部选中项变化时以 updater 精准更新选中态，避免重构全量 nodes 数组
+  React.useEffect(() => {
+    if (selectedNodeId === undefined) return;
+    setNodes((nds) =>
+      nds.map((node) => ({
+        ...node,
+        selected: selectedNodeId === null ? false : node.id === selectedNodeId,
+      })),
+    );
+  }, [selectedNodeId, setNodes]);
 
   React.useEffect(() => {
     setEdges(initialFlowEdges);
@@ -172,37 +183,32 @@ function CanvasInner({
       className={"dsw-flow dsh-workflow-canvas-container " + (className ?? "")}
       style={{ width: "100%", height: "100%", position: "relative", ...style }}
     >
-      <ReactFlowProvider>
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          nodeTypes={NODE_TYPES}
-          edgeTypes={EDGE_TYPES}
-          nodesDraggable
-          nodesConnectable
-          elementsSelectable
-          connectionMode={ConnectionMode.Loose}
-          connectionLineStyle={{ stroke: "#ff6d5a", strokeWidth: 2.2 }}
-          snapToGrid
-          snapGrid={[16, 16]}
-          fitView={fitView}
-          proOptions={{ hideAttribution: false }}
-          defaultEdgeOptions={{ type: "workflowBranch" }}
-          onSelectionChange={({ nodes: selectedNodes }) => {
-            if (selectedNodes.length > 0) onSelect?.(selectedNodes[0].id);
-            else onSelect?.(null);
-          }}
-          onNodeClick={handleSelect}
-          onNodeDragStop={handleNodeDragStop}
-          onConnect={handleConnect}
-          onEdgesDelete={handleEdgesDelete}
-        >
-          <ZoomCapsule />
-          <StudioMiniMap />
-        </ReactFlow>
-      </ReactFlowProvider>
+      <ReactFlow
+        nodes={nodes}
+        edges={edges}
+        onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChange}
+        nodeTypes={NODE_TYPES}
+        edgeTypes={EDGE_TYPES}
+        nodesDraggable
+        nodesConnectable
+        elementsSelectable
+        connectionMode={ConnectionMode.Loose}
+        connectionLineStyle={{ stroke: "#ff6d5a", strokeWidth: 2.2 }}
+        snapToGrid
+        snapGrid={[16, 16]}
+        fitView={fitView}
+        proOptions={{ hideAttribution: false }}
+        defaultEdgeOptions={{ type: "workflowBranch" }}
+        onNodeClick={handleSelect}
+        onPaneClick={() => onSelect?.(null)}
+        onNodeDragStop={handleNodeDragStop}
+        onConnect={handleConnect}
+        onEdgesDelete={handleEdgesDelete}
+      >
+        <ZoomCapsule />
+        <StudioMiniMap />
+      </ReactFlow>
     </div>
   );
 }

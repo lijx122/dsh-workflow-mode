@@ -143,6 +143,81 @@ export interface ExecutionStepRecord {
   timestamp: string;
 }
 
+/** 顶层防白屏错误边界：工作台顶层异常捕获，绝不导致整页白屏 */
+class StudioErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { hasError: boolean; errorMsg: string }
+> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false, errorMsg: '' };
+  }
+  static getDerivedStateFromError(error: unknown) {
+    return { hasError: true, errorMsg: String((error as Error)?.message || error) };
+  }
+  componentDidCatch(error: unknown, info: unknown) {
+    console.error('[dsh-workflow] Studio render error caught by StudioErrorBoundary:', error, info);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ padding: 24, color: 'var(--dsw-alias-state-error-primary)', background: 'var(--dsw-alias-bg-layer-1)', borderRadius: 8, margin: 16 }}>
+          <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 8 }}>⚠️ 工作流 Studio 渲染异常</div>
+          <div style={{ fontSize: 12, fontFamily: 'var(--font-mono)', opacity: 0.85, wordBreak: 'break-all', marginBottom: 12 }}>{this.state.errorMsg}</div>
+          <button
+            type="button"
+            onClick={() => this.setState({ hasError: false, errorMsg: '' })}
+            style={{ padding: '6px 12px', fontSize: 12, borderRadius: 6, border: '1px solid var(--dsw-alias-border-l2)', background: 'var(--dsw-alias-bg-layer-2)', cursor: 'pointer' }}
+          >
+            重试加载
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+/** 防白屏错误边界：任何节点子面板内部异常被优雅捕获，绝不导致整页白屏 */
+class PanelErrorBoundary extends React.Component<
+  { children: React.ReactNode; resetKey?: string },
+  { hasError: boolean; errorMsg: string }
+> {
+  constructor(props: { children: React.ReactNode; resetKey?: string }) {
+    super(props);
+    this.state = { hasError: false, errorMsg: '' };
+  }
+  static getDerivedStateFromError(error: unknown) {
+    return { hasError: true, errorMsg: String((error as Error)?.message || error) };
+  }
+  componentDidCatch(error: unknown, info: unknown) {
+    console.error('[dsh-workflow] Panel render error caught by ErrorBoundary:', error, info);
+  }
+  componentDidUpdate(prevProps: { resetKey?: string }) {
+    if (prevProps.resetKey !== this.props.resetKey && this.state.hasError) {
+      this.setState({ hasError: false, errorMsg: '' });
+    }
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ padding: 14, color: 'var(--dsw-alias-state-error-primary)', background: 'var(--dsw-alias-bg-layer-1)', borderRadius: 8, border: '1px solid var(--dsw-alias-border-l2)' }}>
+          <div style={{ fontWeight: 600, fontSize: 12, marginBottom: 4 }}>⚠️ 节点配置加载异常</div>
+          <div style={{ fontSize: 11, fontFamily: 'var(--font-mono)', opacity: 0.85, wordBreak: 'break-all' }}>{this.state.errorMsg}</div>
+          <button
+            type="button"
+            onClick={() => this.setState({ hasError: false, errorMsg: '' })}
+            style={{ marginTop: 8, padding: '3px 8px', fontSize: 11, borderRadius: 6, border: '1px solid var(--dsw-alias-border-l2)', background: 'var(--dsw-alias-bg-layer-2)', cursor: 'pointer' }}
+          >
+            重试加载
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 /* ---------------- 视图组件 ---------------- */
 
 interface StudioViewProps {
@@ -277,8 +352,8 @@ const StudioView: React.FC<StudioViewProps> = ({ initialCenterBasis, initialPane
       version: 'dsh.workflow.v1',
       name: `自定义工作流 ${library.snapshot.workflows.length + 1}`,
       nodes: [
-        { id: 'start_1', type: 'start', name: '开始 (Manual Trigger)', inputs: {} },
-        { id: 'end_1', type: 'end', name: '结束 (Output)', inputs: {} },
+        { id: 'start_1', type: 'start', name: '开始 (Manual Trigger)', inputs: {}, position: { x: 400, y: 60 } } as unknown as WorkflowNode,
+        { id: 'end_1', type: 'end', name: '结束 (Output)', inputs: {}, position: { x: 400, y: 220 } } as unknown as WorkflowNode,
       ],
       edges: [{ id: 'e_start_end', source: 'start_1', target: 'end_1' }],
     };
@@ -316,19 +391,19 @@ const StudioView: React.FC<StudioViewProps> = ({ initialCenterBasis, initialPane
     }
   };
 
-  // 添加新节点：同步批量更新 DSL 与选中项，杜绝闪烁
+  // 添加新节点：继承完整 defaultFactory 字段并同步更新，彻底消除闪烁与白屏
   const handleAddNode = (type: NodeType): void => {
     const def = NODE_REGISTRY.get(type);
     const id = `n_${type}_${Date.now().toString(36).slice(4)}`;
-    const defaultNode = def ? def.defaultFactory(id) : undefined;
-    const newNode: WorkflowNode = {
+    const defaultNode = def ? def.defaultFactory(id) : { id, type, name: type };
+    const newNode = {
+      ...defaultNode,
       id,
       type,
       name: def?.label ?? type,
-      inputs: defaultNode ? (defaultNode as { inputs?: unknown }).inputs ?? {} : {},
       position: {
-        x: Math.round(150 + Math.random() * 160),
-        y: Math.round(100 + Math.random() * 140),
+        x: Math.round(120 + Math.random() * 140),
+        y: Math.round(80 + Math.random() * 120),
       },
     } as unknown as WorkflowNode;
     
@@ -337,12 +412,10 @@ const StudioView: React.FC<StudioViewProps> = ({ initialCenterBasis, initialPane
       nodes: [...dsl.nodes, newNode],
     };
     
-    // 同步设置 DSL 与 选中节点
     setDsl(nextDsl);
     setSelectedNodeId(id);
     setInspectorTab('params');
     
-    // 持久化
     if (activeWf) {
       saveWorkflow({ id: activeWf.id, dsl: nextDsl });
       setLibrary(loadLibrary());
@@ -704,19 +777,21 @@ const StudioView: React.FC<StudioViewProps> = ({ initialCenterBasis, initialPane
             <div className="dsw-prop-body">
               {SelectedPanel && selectedNode ? (
                 inspectorTab === 'params' ? (
-                  <SelectedPanel
-                    node={selectedNode}
-                    runState={nodeStates[selectedNode.id]}
-                    onChange={(patch) => {
-                      const nextDsl: WorkflowDSL = {
-                        ...dsl,
-                        nodes: dsl.nodes.map((n) =>
-                          n.id === selectedNode.id ? ({ ...n, ...patch } as WorkflowNode) : n,
-                        ),
-                      };
-                      handleDslChange(nextDsl);
-                    }}
-                  />
+                  <PanelErrorBoundary resetKey={selectedNode.id}>
+                    <SelectedPanel
+                      node={selectedNode}
+                      runState={nodeStates[selectedNode.id]}
+                      onChange={(patch) => {
+                        const nextDsl: WorkflowDSL = {
+                          ...dsl,
+                          nodes: dsl.nodes.map((n) =>
+                            n.id === selectedNode.id ? ({ ...n, ...patch } as WorkflowNode) : n,
+                          ),
+                        };
+                        handleDslChange(nextDsl);
+                      }}
+                    />
+                  </PanelErrorBoundary>
                 ) : (
                   <div>
                     <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--dsw-alias-label-secondary)', marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -908,11 +983,13 @@ export function mountStudio(): MountController {
         stored: loadLayoutMemory(),
       });
       root.render(
-        <StudioView
-          key="studio-view"
-          initialCenterBasis={layout.centerBasis}
-          initialPanelWidth={layout.panelWidth}
-        />,
+        <StudioErrorBoundary>
+          <StudioView
+            key="studio-view"
+            initialCenterBasis={layout.centerBasis}
+            initialPanelWidth={layout.panelWidth}
+          />
+        </StudioErrorBoundary>,
       );
       rendered = true;
     } else if (!isStudioOpen && rendered) {

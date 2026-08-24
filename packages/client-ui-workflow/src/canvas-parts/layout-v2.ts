@@ -119,17 +119,24 @@ export function layoutNodesMeasured(
     groups.get(lvl)!.push(n);
   }
 
-  // 坐标：行高按该层最大高度累积；行内以 startX 为中心横向均分。
-  let cursorY = opts.startY;
-  for (const lvl of [...groups.keys()].sort((a, b) => a - b)) {
+  let currentY = opts.startY;
+  const sortedLevels = [...groups.keys()].sort((a, b) => a - b);
+
+  for (const lvl of sortedLevels) {
     const group = groups.get(lvl)!;
-    const rowHeight = Math.max(...group.map((n) => heightOf(n, options)));
-    const totalWidth = group.length * NODE_CARD_WIDTH + (group.length - 1) * opts.gapX;
-    const rowStartX = opts.startX - totalWidth / 2;
+    const count = group.length;
+    const totalRowWidth = count * NODE_CARD_WIDTH + (count - 1) * opts.gapX;
+    const rowStartX = opts.startX - totalRowWidth / 2 + NODE_CARD_WIDTH / 2;
+    const maxHeight = Math.max(...group.map((n) => heightOf(n, opts)));
+
     group.forEach((n, i) => {
-      positions.set(n.id, { x: rowStartX + i * (NODE_CARD_WIDTH + opts.gapX), y: cursorY });
+      positions.set(n.id, {
+        x: rowStartX + i * (NODE_CARD_WIDTH + opts.gapX),
+        y: currentY,
+      });
     });
-    cursorY += rowHeight + opts.gapY;
+
+    currentY += maxHeight + opts.gapY;
   }
   return positions;
 }

@@ -54,7 +54,7 @@ export function LlmPanel(props: NodePanelProps<LlmNode>): React.ReactElement {
       </Field>
       <Field label="User 提示词">
         <TextArea
-          value={node.prompt}
+          value={node.prompt ?? ""}
           rows={4}
           placeholder="如: 分析工单意图与等级：{{#start_1.ticket}}"
           onChange={(prompt) => onChange({ ...node, prompt })}
