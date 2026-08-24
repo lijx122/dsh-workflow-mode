@@ -67,14 +67,14 @@ export function createSidebarEntry(onToggle: () => void): SidebarEntryController
   entry.type = 'button';
   entry.dataset.dshWorkflowEntry = '';
   entry.className = css.entry;
-  entry.setAttribute('aria-label', '工作流工作台 (Workflow Studio)');
-  entry.innerHTML = `<span class="${css.entryIcon}">${ICON}</span><span class="${css.entryLabel}">工作流工作台</span>`;
+  entry.setAttribute('aria-label', '工作流 (Workflow Studio)');
+  entry.innerHTML = `<span class="${css.entryIcon}">${ICON}</span><span class="${css.entryLabel}">工作流</span>`;
   entry.addEventListener('click', onToggle);
 
   let root: HTMLElement | undefined;
   let placed = false;
-  // 门控可见性闸门：PresetGate 未放行前，任何 Observer 回调都不得放置入口。
-  let visible = false;
+  // 常驻侧边栏入口（对齐 task-board 与 ssh 先例），用户随时可点击展开/收起工作台
+  let visible = true;
 
   const tryPlace = (): void => {
     if (!visible) return;

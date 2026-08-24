@@ -121,14 +121,11 @@ export function apply(ctx: unknown): void {
       },
     };
 
-    // 门控快照 → 入口可见性 / 高亮 / 工作台自动弹出与收起，单一同步出口。
+    // 入口常驻可见，同步侧边栏高亮与工作台状态。
     const syncUi = (): void => {
       try {
-        const snap = gate.getSnapshot();
-        markStage('gate-snap:' + String(snap.shouldShow) + ':' + String(snap.activeSessionId ?? 'none'));
-        entry.setVisible(snap.shouldShow);
+        entry.setVisible(true);
         entry.setActive(studio.isOpen());
-        studio.handleGate(snap);
       } catch (error) {
         console.error('[dsh-workflow] ui sync failed:', error);
         markStage('syncUi-err:' + String((error as Error)?.message || error));

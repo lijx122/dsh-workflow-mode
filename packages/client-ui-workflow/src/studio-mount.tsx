@@ -88,7 +88,6 @@ export function syncStudioGate(gate: { shouldShow: boolean; activeSessionId: str
   if (gate.activeSessionId !== activeSessionId) {
     activeSessionId = gate.activeSessionId;
     dismissedSessionId = undefined;
-    if (!gate.shouldShow && isStudioOpen) isStudioOpen = false;
   }
   if (gate.shouldShow && !isStudioOpen && dismissedSessionId !== gate.activeSessionId) {
     isStudioOpen = true;
