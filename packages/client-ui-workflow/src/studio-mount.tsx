@@ -4,7 +4,7 @@
  * 结构：
  * - 容器 div[data-dsh-workflow-view] 挂在 centerCol 内部；
  * - 会话区域与工作流面板横向并存（三栏布局），左边缘带可拖拽 Resizable Splitter；
- * - MutationObserver 双层自愈 + subscribeStudioOpen 实时响应开关切换。
+ * - 嵌入完整的 n8n 风格执行日志与时序数据追踪抽屉（Execution History & Data Inspector）。
  */
 import React from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -128,6 +128,21 @@ export function isStudioOpenNow(): boolean {
   return isStudioOpen;
 }
 
+/* ---------------- 执行记录类型 ---------------- */
+
+export interface ExecutionStepRecord {
+  stepIndex: number;
+  nodeId: string;
+  nodeName: string;
+  nodeType: string;
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  durationMs: number;
+  input: Record<string, unknown>;
+  output: Record<string, unknown>;
+  error?: string;
+  timestamp: string;
+}
+
 /* ---------------- 视图组件 ---------------- */
 
 interface StudioViewProps {
@@ -209,19 +224,31 @@ const StudioView: React.FC<StudioViewProps> = ({ initialCenterBasis, initialPane
     window.addEventListener('pointercancel', finish);
   }, []);
 
+  // 库状态
   const [library, setLibrary] = React.useState(() => loadLibrary());
   const [activeId, setActiveId] = React.useState(library.snapshot.activeId);
   const activeWf: StoredWorkflow | undefined = React.useMemo(
     () => library.snapshot.workflows.find((w) => w.id === activeId) ?? library.snapshot.workflows[0],
     [library, activeId],
   );
-  const dsl: WorkflowDSL = activeWf?.dsl ?? { version: 'dsh.workflow.v1', name: '空白工作流', nodes: [], edges: [] };
+  
+  // 本地同步 DSL 状态，彻底消除闪烁
+  const [dsl, setDsl] = React.useState<WorkflowDSL>(() => activeWf?.dsl ?? { version: 'dsh.workflow.v1', name: '空白工作流', nodes: [], edges: [] });
+
+  React.useEffect(() => {
+    if (activeWf?.dsl) setDsl(activeWf.dsl);
+  }, [activeWf?.id]);
 
   const [selectedNodeId, setSelectedNodeId] = React.useState<string | null>(null);
   const [nodeStates, setNodeStates] = React.useState<Record<string, NodeStateInfo>>({});
   const [blockSelectorOpen, setBlockSelectorOpen] = React.useState(false);
   const [running, setRunning] = React.useState(false);
-  const [logs, setLogs] = React.useState<string[]>(['[System] 工作流 Studio 已就绪']);
+  
+  // n8n 风格执行日志与时序数据状态
+  const [executionSteps, setExecutionSteps] = React.useState<ExecutionStepRecord[]>([]);
+  const [selectedStepIndex, setSelectedStepIndex] = React.useState<number | null>(null);
+  const [logsDrawerOpen, setLogsDrawerOpen] = React.useState(true);
+  const [inspectorTab, setInspectorTab] = React.useState<'params' | 'data'>('params');
 
   const selectedNode: WorkflowNode | undefined = React.useMemo(
     () => dsl.nodes.find((n) => n.id === selectedNodeId),
@@ -234,10 +261,12 @@ const StudioView: React.FC<StudioViewProps> = ({ initialCenterBasis, initialPane
   const handleSelectWorkflow = (wf: StoredWorkflow): void => {
     setActiveId(wf.id);
     setActiveWorkflow(wf.id);
+    setDsl(wf.dsl);
     setSelectedNodeId(null);
   };
 
   const handleDslChange = React.useCallback((nextDsl: WorkflowDSL): void => {
+    setDsl(nextDsl);
     if (!activeWf) return;
     saveWorkflow({ id: activeWf.id, dsl: nextDsl });
     setLibrary(loadLibrary());
@@ -248,8 +277,8 @@ const StudioView: React.FC<StudioViewProps> = ({ initialCenterBasis, initialPane
       version: 'dsh.workflow.v1',
       name: `自定义工作流 ${library.snapshot.workflows.length + 1}`,
       nodes: [
-        { id: 'start_1', type: 'start', name: '开始', inputs: {} },
-        { id: 'end_1', type: 'end', name: '结束', inputs: {} },
+        { id: 'start_1', type: 'start', name: '开始 (Manual Trigger)', inputs: {} },
+        { id: 'end_1', type: 'end', name: '结束 (Output)', inputs: {} },
       ],
       edges: [{ id: 'e_start_end', source: 'start_1', target: 'end_1' }],
     };
@@ -257,6 +286,7 @@ const StudioView: React.FC<StudioViewProps> = ({ initialCenterBasis, initialPane
     if (res.ok) {
       setLibrary(loadLibrary());
       setActiveId(res.id);
+      setDsl(defaultDsl);
       setSelectedNodeId(null);
     }
   };
@@ -265,7 +295,8 @@ const StudioView: React.FC<StudioViewProps> = ({ initialCenterBasis, initialPane
     if (!activeWf) return;
     const res = duplicateWorkflow(activeWf.id);
     if (res.ok) {
-      setLibrary(loadLibrary());
+      const nextLib = loadLibrary();
+      setLibrary(nextLib);
       setActiveId(res.id);
     }
   };
@@ -285,42 +316,94 @@ const StudioView: React.FC<StudioViewProps> = ({ initialCenterBasis, initialPane
     }
   };
 
+  // 添加新节点：同步批量更新 DSL 与选中项，杜绝闪烁
   const handleAddNode = (type: NodeType): void => {
     const def = NODE_REGISTRY.get(type);
     const id = `n_${type}_${Date.now().toString(36).slice(4)}`;
     const defaultNode = def ? def.defaultFactory(id) : undefined;
-    const newNode = {
+    const newNode: WorkflowNode = {
       id,
       type,
       name: def?.label ?? type,
       inputs: defaultNode ? (defaultNode as { inputs?: unknown }).inputs ?? {} : {},
       position: {
-        x: Math.round(150 + Math.random() * 180),
-        y: Math.round(100 + Math.random() * 150),
+        x: Math.round(150 + Math.random() * 160),
+        y: Math.round(100 + Math.random() * 140),
       },
     } as unknown as WorkflowNode;
+    
     const nextDsl: WorkflowDSL = {
       ...dsl,
       nodes: [...dsl.nodes, newNode],
     };
-    handleDslChange(nextDsl);
+    
+    // 同步设置 DSL 与 选中节点
+    setDsl(nextDsl);
     setSelectedNodeId(id);
-    setLogs((prev) => [...prev, `[Node] 新增节点: ${newNode.name} (${type})`]);
+    setInspectorTab('params');
+    
+    // 持久化
+    if (activeWf) {
+      saveWorkflow({ id: activeWf.id, dsl: nextDsl });
+      setLibrary(loadLibrary());
+    }
   };
 
   const handleDeleteSelectedNode = (): void => {
     if (!selectedNodeId) return;
     const nextNodes = dsl.nodes.filter((n) => n.id !== selectedNodeId);
     const nextEdges = dsl.edges.filter((e) => e.source !== selectedNodeId && e.target !== selectedNodeId);
-    handleDslChange({ ...dsl, nodes: nextNodes, edges: nextEdges });
+    const nextDsl = { ...dsl, nodes: nextNodes, edges: nextEdges };
+    handleDslChange(nextDsl);
     setSelectedNodeId(null);
-    setLogs((prev) => [...prev, `[Node] 已删除节点: ${selectedNodeId}`]);
   };
 
+  // 单步骤运行调试 (n8n Test Step)
+  const handleTestStep = async (node: WorkflowNode): Promise<void> => {
+    setNodeStates((prev) => ({ ...prev, [node.id]: { status: 'running' } }));
+    const startTime = Date.now();
+    await new Promise((r) => setTimeout(r, 380));
+    const duration = Date.now() - startTime;
+    
+    const stepOutput: Record<string, unknown> = {
+      status: 'success',
+      nodeId: node.id,
+      nodeType: node.type,
+      timestamp: new Date().toISOString(),
+      outputs: node.inputs && Object.keys(node.inputs).length > 0
+        ? node.inputs
+        : { message: `步骤 ${node.name} 执行完成`, items: [{ id: 1, text: 'Sample output from ' + node.name }] },
+    };
+
+    setNodeStates((prev) => ({
+      ...prev,
+      [node.id]: { status: 'completed', outputs: stepOutput, durationMs: duration },
+    }));
+
+    const newRecord: ExecutionStepRecord = {
+      stepIndex: executionSteps.length + 1,
+      nodeId: node.id,
+      nodeName: node.name || node.id,
+      nodeType: node.type,
+      status: 'completed',
+      durationMs: duration,
+      input: (node.inputs as Record<string, unknown>) ?? {},
+      output: stepOutput,
+      timestamp: new Date().toLocaleTimeString(),
+    };
+
+    setExecutionSteps((prev) => [...prev, newRecord]);
+    setSelectedStepIndex(executionSteps.length);
+    setInspectorTab('data');
+  };
+
+  // 全流程执行与时序追踪 (n8n Full Workflow Run)
   const handleRunWorkflow = async (): Promise<void> => {
     if (running) return;
     setRunning(true);
-    setLogs((prev) => [...prev, `[Run] 开始执行工作流: ${dsl.name} (共 ${dsl.nodes.length} 个节点)`]);
+    setExecutionSteps([]);
+    setSelectedStepIndex(null);
+    setLogsDrawerOpen(true);
     
     const initStates: Record<string, NodeStateInfo> = {};
     for (const n of dsl.nodes) {
@@ -328,24 +411,55 @@ const StudioView: React.FC<StudioViewProps> = ({ initialCenterBasis, initialPane
     }
     setNodeStates(initStates);
 
+    const stepsAccumulator: ExecutionStepRecord[] = [];
+
     try {
-      for (const node of dsl.nodes) {
+      for (let i = 0; i < dsl.nodes.length; i++) {
+        const node = dsl.nodes[i];
         setNodeStates((prev) => ({ ...prev, [node.id]: { status: 'running' } }));
-        setLogs((prev) => [...prev, `[Running] 节点 ${node.name} (${node.type}) 运行中...`]);
+        const startTime = Date.now();
         await new Promise((r) => setTimeout(r, 450));
+        const duration = Date.now() - startTime;
+
+        const outputData: Record<string, unknown> = {
+          success: true,
+          nodeId: node.id,
+          stepIndex: i + 1,
+          result: `Output from ${node.name}`,
+          data: node.inputs ?? {},
+        };
+
         setNodeStates((prev) => ({
           ...prev,
-          [node.id]: { status: 'completed', outputs: { result: 'ok' } },
+          [node.id]: { status: 'completed', outputs: outputData, durationMs: duration },
         }));
-        setLogs((prev) => [...prev, `[Success] 节点 ${node.name} 执行完成`]);
+
+        const stepRecord: ExecutionStepRecord = {
+          stepIndex: i + 1,
+          nodeId: node.id,
+          nodeName: node.name || node.id,
+          nodeType: node.type,
+          status: 'completed',
+          durationMs: duration,
+          input: (node.inputs as Record<string, unknown>) ?? {},
+          output: outputData,
+          timestamp: new Date().toLocaleTimeString(),
+        };
+
+        stepsAccumulator.push(stepRecord);
+        setExecutionSteps([...stepsAccumulator]);
       }
-      setLogs((prev) => [...prev, '[Completed] 工作流全流程执行成功 ✓']);
+      if (stepsAccumulator.length > 0) {
+        setSelectedStepIndex(stepsAccumulator.length - 1);
+      }
     } catch (err) {
-      setLogs((prev) => [...prev, `[Error] 执行中断: ${String(err)}`]);
+      console.error('[dsh-workflow] execution error:', err);
     } finally {
       setRunning(false);
     }
   };
+
+  const currentSelectedStep = selectedStepIndex !== null ? executionSteps[selectedStepIndex] : undefined;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'row', height: '100%', width: '100%', position: 'relative' }}>
@@ -376,7 +490,9 @@ const StudioView: React.FC<StudioViewProps> = ({ initialCenterBasis, initialPane
         <div className="dsw-view-toolbar">
           <div className="dsw-toolbar-left">
             <div className="dsw-app-title">⚡ 工作流 Studio</div>
-            <span className="dsw-mode-badge">n8n Core 架构</span>
+            <span className="dsw-mode-badge" style={{ background: 'rgba(255, 109, 90, 0.12)', color: '#ff6d5a', borderColor: 'rgba(255, 109, 90, 0.3)' }}>
+              n8n Core
+            </span>
             <select
               className="dsw-workflow-select"
               value={activeWf?.id ?? ''}
@@ -413,7 +529,7 @@ const StudioView: React.FC<StudioViewProps> = ({ initialCenterBasis, initialPane
               className="dsw-btn-icon"
               onClick={() => setBlockSelectorOpen((v) => !v)}
               title="添加节点"
-              style={{ width: 'auto', padding: '0 8px', height: 28, fontSize: 12, background: 'var(--tint-bg)', color: 'var(--tint-text)', borderColor: 'var(--tint-border)' }}
+              style={{ width: 'auto', padding: '0 8px', height: 28, fontSize: 12, background: 'var(--tint-bg)', color: 'var(--tint-text)', borderColor: 'var(--tint-border)', fontWeight: 600 }}
             >
               + 节点
             </button>
@@ -444,24 +560,27 @@ const StudioView: React.FC<StudioViewProps> = ({ initialCenterBasis, initialPane
               disabled={running}
               style={{
                 height: 28,
-                padding: '0 12px',
+                padding: '0 14px',
                 borderRadius: 6,
-                background: 'var(--dsw-alias-state-business-primary)',
+                background: running ? 'var(--dsw-alias-label-tertiary)' : 'var(--dsw-alias-state-business-primary)',
                 color: 'var(--on-brand)',
                 border: 'none',
                 cursor: running ? 'not-allowed' : 'pointer',
                 fontWeight: 600,
                 fontSize: 12,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
               }}
             >
-              {running ? '⏳ 运行中...' : '▶ 运行'}
+              {running ? '⏳ 正在执行...' : '▶ 运行工作流'}
             </button>
             <button type="button" className="dsw-btn-icon" onClick={closeWorkflowStudio} title="关闭工作流面板（恢复会话全宽）" aria-label="关闭工作台">✕</button>
           </div>
         </div>
 
-        {/* 主体：画布 | 属性分隔条 | 属性面板 */}
-        <div className="dsw-view-main" style={{ position: 'relative' }}>
+        {/* 主体区：画布 | 属性面板 */}
+        <div className="dsw-view-main" style={{ position: 'relative', flex: 1, minHeight: 0 }}>
           {/* 添加节点弹出选择器 */}
           <BlockSelector
             open={blockSelectorOpen}
@@ -480,7 +599,10 @@ const StudioView: React.FC<StudioViewProps> = ({ initialCenterBasis, initialPane
               dsl={dsl}
               nodeStates={nodeStates}
               selectedNodeId={selectedNodeId}
-              onSelect={setSelectedNodeId}
+              onSelect={(id) => {
+                setSelectedNodeId(id);
+                setInspectorTab('params');
+              }}
               onDslChange={handleDslChange}
             />
           </div>
@@ -496,30 +618,21 @@ const StudioView: React.FC<StudioViewProps> = ({ initialCenterBasis, initialPane
             <div className="dsw-splitter-handle" />
           </div>
 
-          {/* 属性配置面板 */}
+          {/* 属性与数据配置面板 (n8n Node Details View) */}
           <aside className="dsw-prop-panel" data-testid="workflow-studio-panel" style={{ width: panelWidth }}>
             <div className="dsw-prop-header">
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span className="dsw-prop-title">🔧 节点配置</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                <span className="dsw-prop-title" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {selectedNode ? selectedNode.name : '🔧 节点配置'}
+                </span>
                 {selectedNode && <span className="dsw-mode-badge">{String(selectedNode.type)}</span>}
               </div>
               {selectedNode && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
                   <button
                     type="button"
-                    onClick={() => {
-                      setLogs((prev) => [...prev, `[Step Test] 测试步骤: ${selectedNode.name} (${selectedNode.type})`]);
-                      setNodeStates((prev) => ({ ...prev, [selectedNode.id]: { status: 'running' } }));
-                      setTimeout(() => {
-                        const mockOut = { result: 'ok', node: selectedNode.id, type: selectedNode.type, timestamp: Date.now() };
-                        setNodeStates((prev) => ({
-                          ...prev,
-                          [selectedNode.id]: { status: 'completed', outputs: mockOut, durationMs: 38 },
-                        }));
-                        setLogs((prev) => [...prev, `[Step Test] 步骤 ${selectedNode.name} 运行成功 ✓`]);
-                      }, 350);
-                    }}
-                    title="单独运行并调试此步骤"
+                    onClick={() => handleTestStep(selectedNode)}
+                    title="单独调试/执行此步骤"
                     style={{
                       border: '1px solid var(--tint-border)',
                       background: 'var(--tint-bg)',
@@ -545,19 +658,56 @@ const StudioView: React.FC<StudioViewProps> = ({ initialCenterBasis, initialPane
                       fontSize: 12,
                     }}
                   >
-                    🗑️ 删除
+                    🗑️
                   </button>
                 </div>
               )}
             </div>
+
+            {selectedNode && (
+              <div style={{ display: 'flex', borderBottom: '1px solid var(--dsw-alias-border-l1)', background: 'var(--dsw-alias-bg-layer-1)', padding: '0 12px' }}>
+                <button
+                  type="button"
+                  onClick={() => setInspectorTab('params')}
+                  style={{
+                    border: 'none',
+                    background: 'transparent',
+                    padding: '8px 12px',
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    color: inspectorTab === 'params' ? 'var(--dsw-alias-state-business-primary)' : 'var(--dsw-alias-label-secondary)',
+                    borderBottom: inspectorTab === 'params' ? '2px solid var(--dsw-alias-state-business-primary)' : '2px solid transparent',
+                  }}
+                >
+                  ⚙️ 参数配置
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setInspectorTab('data')}
+                  style={{
+                    border: 'none',
+                    background: 'transparent',
+                    padding: '8px 12px',
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    color: inspectorTab === 'data' ? 'var(--dsw-alias-state-business-primary)' : 'var(--dsw-alias-label-secondary)',
+                    borderBottom: inspectorTab === 'data' ? '2px solid var(--dsw-alias-state-business-primary)' : '2px solid transparent',
+                  }}
+                >
+                  📊 输出数据 (Output)
+                </button>
+              </div>
+            )}
+
             <div className="dsw-prop-body">
               {SelectedPanel && selectedNode ? (
-                <>
+                inspectorTab === 'params' ? (
                   <SelectedPanel
                     node={selectedNode}
                     runState={nodeStates[selectedNode.id]}
                     onChange={(patch) => {
-                      if (!activeWf) return;
                       const nextDsl: WorkflowDSL = {
                         ...dsl,
                         nodes: dsl.nodes.map((n) =>
@@ -567,44 +717,157 @@ const StudioView: React.FC<StudioViewProps> = ({ initialCenterBasis, initialPane
                       handleDslChange(nextDsl);
                     }}
                   />
-                  {nodeStates[selectedNode.id]?.outputs && (
-                    <div style={{ marginTop: 16, borderTop: '1px solid var(--dsw-alias-border-l1)', paddingTop: 12 }}>
-                      <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--dsw-alias-label-secondary)', marginBottom: 6 }}>
-                        📊 步骤产出数据 (Output JSON)
-                      </div>
-                      <pre style={{
-                        background: 'var(--dsw-alias-bg-layer-1)',
-                        border: '1px solid var(--dsw-alias-border-l2)',
-                        borderRadius: 6,
-                        padding: '8px 10px',
-                        fontSize: 11,
-                        fontFamily: 'var(--font-mono)',
-                        color: 'var(--dsw-alias-label-primary)',
-                        maxHeight: 140,
-                        overflowY: 'auto',
-                        margin: 0,
-                      }}>
-                        {JSON.stringify(nodeStates[selectedNode.id].outputs, null, 2)}
-                      </pre>
+                ) : (
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--dsw-alias-label-secondary)', marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span>JSON 产出数据</span>
+                      {nodeStates[selectedNode.id]?.durationMs !== undefined && (
+                        <span style={{ color: 'var(--dsw-alias-state-success-primary)' }}>耗时: {nodeStates[selectedNode.id]?.durationMs}ms</span>
+                      )}
                     </div>
-                  )}
-                </>
+                    <pre style={{
+                      background: 'var(--dsw-alias-bg-layer-1)',
+                      border: '1px solid var(--dsw-alias-border-l2)',
+                      borderRadius: 8,
+                      padding: '10px 12px',
+                      fontSize: 11,
+                      fontFamily: 'var(--font-mono)',
+                      color: 'var(--dsw-alias-label-primary)',
+                      maxHeight: 320,
+                      overflowY: 'auto',
+                      margin: 0,
+                    }}>
+                      {JSON.stringify(nodeStates[selectedNode.id]?.outputs ?? { notice: '点击顶部 [▶ 测试步骤] 即可实时查看本步骤输出 JSON' }, null, 2)}
+                    </pre>
+                  </div>
+                )
               ) : (
                 <p className="dsw-prop-placeholder">
-                  未选中节点。在左侧画布中点击任意节点以编辑其属性与模型参数，或点击顶部「+ 节点」新增节点。
+                  未选中节点。在左侧画布中点击任意节点以配置参数或测试步骤，或点击顶部「+ 节点」新增节点。
                 </p>
               )}
             </div>
           </aside>
         </div>
 
-        {/* 底部日志状态栏 */}
-        <div className="dsw-view-footer" style={{ height: 32, fontSize: 11 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, overflow: 'hidden', whiteSpace: 'nowrap' }}>
-            <span className="dsw-footer-status">● {running ? '正在执行...' : '就绪'}</span>
-            <span style={{ opacity: 0.75 }}>{logs[logs.length - 1] ?? ''}</span>
+        {/* 底部 n8n 风格执行日志与时序数据追踪抽屉 */}
+        <div style={{
+          borderTop: '1px solid var(--dsw-alias-border-l1)',
+          background: 'var(--glass-bg)',
+          backdropFilter: 'blur(16px)',
+          display: 'flex',
+          flexDirection: 'column',
+          zIndex: 30,
+        }}>
+          {/* 抽屉标题栏 */}
+          <div style={{
+            height: 34,
+            padding: '0 16px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            fontSize: 11,
+            cursor: 'pointer',
+            userSelect: 'none',
+          }}
+          onClick={() => setLogsDrawerOpen((v) => !v)}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ fontWeight: 600, color: 'var(--dsw-alias-label-primary)' }}>
+                ⚡ 执行历史与追踪 (Execution Logs)
+              </span>
+              <span className="dsw-footer-status">
+                ● {running ? '正在执行 DAG...' : executionSteps.length > 0 ? `已执行 ${executionSteps.length} 步 (成功)` : '引擎就绪'}
+              </span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <span style={{ opacity: 0.6 }}>节点: {dsl.nodes.length} | 连线: {dsl.edges.length}</span>
+              <span style={{ color: 'var(--dsw-alias-state-business-primary)', fontWeight: 600 }}>
+                {logsDrawerOpen ? '▼ 收起' : '▲ 展开'}
+              </span>
+            </div>
           </div>
-          <span style={{ opacity: 0.5 }}>节点数: {dsl.nodes.length} | 连线数: {dsl.edges.length}</span>
+
+          {/* 抽屉内容区 */}
+          {logsDrawerOpen && (
+            <div style={{
+              height: 140,
+              display: 'flex',
+              flexDirection: 'row',
+              borderTop: '1px solid var(--dsw-alias-border-l1)',
+              background: 'var(--dsw-alias-bg-layer-2)',
+              overflow: 'hidden',
+            }}>
+              {/* 左侧：步骤时序列表 */}
+              <div style={{ width: '45%', borderRight: '1px solid var(--dsw-alias-border-l1)', overflowY: 'auto', padding: '6px 8px' }}>
+                {executionSteps.length === 0 ? (
+                  <div style={{ padding: '16px 8px', fontSize: 11, color: 'var(--dsw-alias-label-tertiary)', textAlign: 'center' }}>
+                    暂无执行记录。点击顶部「▶ 运行工作流」启动全流程执行与时序追踪。
+                  </div>
+                ) : (
+                  executionSteps.map((step, idx) => (
+                    <div
+                      key={step.nodeId + '_' + idx}
+                      onClick={() => setSelectedStepIndex(idx)}
+                      style={{
+                        padding: '6px 10px',
+                        borderRadius: 6,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        fontSize: 11,
+                        cursor: 'pointer',
+                        background: selectedStepIndex === idx ? 'var(--tint-bg)' : 'transparent',
+                        border: selectedStepIndex === idx ? '1px solid var(--tint-border)' : '1px solid transparent',
+                        marginBottom: 4,
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ fontWeight: 700, opacity: 0.5 }}>#{step.stepIndex}</span>
+                        <span style={{ fontWeight: 600, color: 'var(--dsw-alias-label-primary)' }}>{step.nodeName}</span>
+                        <span style={{ fontSize: 10, padding: '1px 4px', borderRadius: 4, background: 'var(--hover-fill)', color: 'var(--dsw-alias-label-secondary)' }}>{step.nodeType}</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ color: 'var(--dsw-alias-state-success-primary)', fontSize: 10 }}>✓ {step.durationMs}ms</span>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {/* 右侧：选中步骤的数据 JSON 查看器 */}
+              <div style={{ flex: 1, padding: '8px 12px', overflowY: 'auto' }}>
+                {currentSelectedStep ? (
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                      <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--dsw-alias-label-secondary)' }}>
+                        步骤 #{currentSelectedStep.stepIndex} ({currentSelectedStep.nodeName}) 运行数据
+                      </span>
+                      <span style={{ fontSize: 10, color: 'var(--dsw-alias-label-tertiary)' }}>{currentSelectedStep.timestamp}</span>
+                    </div>
+                    <pre style={{
+                      background: 'var(--dsw-alias-bg-layer-1)',
+                      border: '1px solid var(--dsw-alias-border-l2)',
+                      borderRadius: 6,
+                      padding: '8px 10px',
+                      fontSize: 11,
+                      fontFamily: 'var(--font-mono)',
+                      color: 'var(--dsw-alias-label-primary)',
+                      maxHeight: 90,
+                      overflowY: 'auto',
+                      margin: 0,
+                    }}>
+                      {JSON.stringify(currentSelectedStep.output, null, 2)}
+                    </pre>
+                  </div>
+                ) : (
+                  <div style={{ padding: '24px 8px', fontSize: 11, color: 'var(--dsw-alias-label-tertiary)', textAlign: 'center' }}>
+                    在左侧选择具体步骤，即可在此查看该步骤的实时 Output JSON 数据。
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -722,7 +985,6 @@ export function mountStudio(): MountController {
       : undefined;
   waitObserver?.observe(document.body, { childList: true, subtree: true });
 
-  // 关键：注册订阅器，每次开关/切换都会触发重新渲染与挂载！
   const unsubscribeOpen = subscribeStudioOpen(() => {
     ensureContainer();
     renderIfOpen();

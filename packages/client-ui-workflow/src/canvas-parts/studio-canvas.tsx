@@ -76,13 +76,13 @@ function CanvasInner({
           node,
           status,
           stateInfo: rawState as NodeStateInfo | undefined,
-          onNodeClick,
+          onNodeClick: () => onSelect?.(node.id),
         },
         selected: selectedNodeId !== undefined ? selectedNodeId === node.id : undefined,
         width: 250,
       };
     });
-  }, [dsl.nodes, nodeStates, autoPositions, onNodeClick, selectedNodeId]);
+  }, [dsl.nodes, nodeStates, autoPositions, onSelect, selectedNodeId]);
 
   const initialFlowEdges = useMemo<FlowEdge[]>(() => {
     return dsl.edges.map((edge) => {
