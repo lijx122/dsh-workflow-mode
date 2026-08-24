@@ -83,9 +83,15 @@ export function apply(ctx: unknown): void {
       host.effect(() => releaseWorkflowApply, '@dsh-workflow/client-ui-workflow: apply claim');
     }
 
-    markStage('host-sessions:' + (host && (host as { sessions?: unknown }).sessions !== undefined ? 'yes' : 'no'));
-    markStage('ctx-keys:' + Object.keys((host ?? {}) as object).slice(0, 12).join('|'));
-    const gate = createPresetGate(host?.sessions);
+    let sessionsService: unknown = undefined;
+    try {
+      sessionsService = (host as { sessions?: unknown })?.sessions;
+      markStage('sessions-ok:' + (sessionsService ? 'yes' : 'no'));
+    } catch (e) {
+      markStage('sessions-err:' + String((e as Error)?.message || e));
+    }
+
+    const gate = createPresetGate(sessionsService);
     markStage('gate-created');
     const studio = mountStudio();
     const entry = createSidebarEntry(toggleWorkflowStudio);
@@ -125,6 +131,7 @@ export function apply(ctx: unknown): void {
         studio.handleGate(snap);
       } catch (error) {
         console.error('[dsh-workflow] ui sync failed:', error);
+        markStage('syncUi-err:' + String((error as Error)?.message || error));
       }
     };
 
@@ -141,10 +148,16 @@ export function apply(ctx: unknown): void {
     // 卸载清理（§10.4「卸载还原属性并移除容器」的落地）：经 ctx.effect 注册
     // instance.dispose，插件 fiber 卸载/热重载时还原 html 属性并移除容器。
     if (host && typeof host.effect === 'function') {
-      host.effect(() => instance.dispose, '@dsh-workflow/client-ui-workflow: ui dispose');
+      try {
+        host.effect(() => instance.dispose, '@dsh-workflow/client-ui-workflow: ui dispose');
+        markStage('effect-ok');
+      } catch (e) {
+        markStage('effect-err:' + String((e as Error)?.message || e));
+      }
     }
   } catch (error) {
     console.error('[dsh-workflow] Client UI mounting error:', error);
+    markStage('apply-err:' + String((error as Error)?.message || error));
   }
 }
 
