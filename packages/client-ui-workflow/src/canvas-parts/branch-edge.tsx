@@ -43,9 +43,9 @@ export const StudioBranchEdge: React.FC<EdgeProps> = ({
         markerEnd={markerEnd}
         className={active ? styles.edgeActive : undefined}
         style={{
-          stroke: active ? "var(--dsw-alias-state-business-primary)" : "var(--edge-stroke)",
-          strokeWidth: active ? 2.2 : 2,
-          strokeDasharray: active ? "6 3" : "4 2",
+          stroke: active ? "var(--dsw-alias-state-business-primary)" : "var(--dsw-alias-label-tertiary)",
+          strokeWidth: active ? 2.5 : 2,
+          strokeDasharray: active ? "5 3" : undefined,
           ...style,
         }}
       />

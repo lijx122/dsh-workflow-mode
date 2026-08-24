@@ -47,6 +47,8 @@ export interface StudioCanvasProps extends WorkflowCanvasProps {
   onDslChange?(nextDsl: WorkflowDSL): void;
 }
 
+import { useNodesState, useEdgesState, ConnectionMode } from "@xyflow/react";
+
 function CanvasInner({
   dsl,
   nodeStates,
@@ -60,7 +62,7 @@ function CanvasInner({
 }: StudioCanvasProps): React.ReactElement {
   const autoPositions = useMemo(() => layoutNodesMeasured(dsl.nodes, dsl.edges), [dsl.nodes, dsl.edges]);
 
-  const flowNodes = useMemo<FlowNode[]>(() => {
+  const initialFlowNodes = useMemo<FlowNode[]>(() => {
     return dsl.nodes.map((node) => {
       const rawState: NodeStateInfo | { status: string } | undefined = nodeStates?.[node.id];
       const status = normalizeStatus(rawState?.status);
@@ -77,12 +79,12 @@ function CanvasInner({
           onNodeClick,
         },
         selected: selectedNodeId !== undefined ? selectedNodeId === node.id : undefined,
-        width: 240,
+        width: 250,
       };
     });
   }, [dsl.nodes, nodeStates, autoPositions, onNodeClick, selectedNodeId]);
 
-  const flowEdges = useMemo<FlowEdge[]>(() => {
+  const initialFlowEdges = useMemo<FlowEdge[]>(() => {
     return dsl.edges.map((edge) => {
       const sourceStatus = normalizeStatus(nodeStates?.[edge.source]?.status);
       const active = sourceStatus === "running";
@@ -100,6 +102,18 @@ function CanvasInner({
     });
   }, [dsl.edges, nodeStates]);
 
+  const [nodes, setNodes, onNodesChange] = useNodesState(initialFlowNodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(initialFlowEdges);
+
+  // 当外部 dsl / 选中项变化时同步到本地状态
+  React.useEffect(() => {
+    setNodes(initialFlowNodes);
+  }, [initialFlowNodes, setNodes]);
+
+  React.useEffect(() => {
+    setEdges(initialFlowEdges);
+  }, [initialFlowEdges, setEdges]);
+
   const handleSelect = useCallback(
     (_event: unknown, node: FlowNode) => {
       onSelect?.(node.id);
@@ -107,7 +121,7 @@ function CanvasInner({
     [onSelect],
   );
 
-  // 节点拖拽移动后更新 DSL 坐标
+  // 节点拖拽松手后一次性更新 DSL 坐标，拖拽过程中 0 级卡顿
   const handleNodeDragStop = useCallback(
     (_event: unknown, node: FlowNode) => {
       if (!onDslChange) return;
@@ -121,11 +135,11 @@ function CanvasInner({
     [dsl, onDslChange],
   );
 
-  // 连线建立
+  // n8n 风格连线：拖拽建立连线
   const handleConnect = useCallback(
     (connection: Connection) => {
       if (!connection.source || !connection.target || !onDslChange) return;
-      if (connection.source === connection.target) return; // 避免自环
+      if (connection.source === connection.target) return;
       const exists = dsl.edges.some(
         (e) => e.source === connection.source && e.target === connection.target && e.sourceHandle === (connection.sourceHandle ?? undefined)
       );
@@ -160,18 +174,24 @@ function CanvasInner({
     >
       <ReactFlowProvider>
         <ReactFlow
-          nodes={flowNodes}
-          edges={flowEdges}
+          nodes={nodes}
+          edges={edges}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
           nodeTypes={NODE_TYPES}
           edgeTypes={EDGE_TYPES}
           nodesDraggable
           nodesConnectable
           elementsSelectable
+          connectionMode={ConnectionMode.Loose}
+          connectionLineStyle={{ stroke: "#ff6d5a", strokeWidth: 2.2 }}
+          snapToGrid
+          snapGrid={[16, 16]}
           fitView={fitView}
           proOptions={{ hideAttribution: false }}
           defaultEdgeOptions={{ type: "workflowBranch" }}
-          onSelectionChange={({ nodes }) => {
-            if (nodes.length > 0) onSelect?.(nodes[0].id);
+          onSelectionChange={({ nodes: selectedNodes }) => {
+            if (selectedNodes.length > 0) onSelect?.(selectedNodes[0].id);
             else onSelect?.(null);
           }}
           onNodeClick={handleSelect}
