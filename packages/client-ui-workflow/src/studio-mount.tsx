@@ -135,6 +135,47 @@ const StudioView: React.FC<StudioViewProps> = ({ initialCenterBasis, initialPane
 
   const [iframeKey, setIframeKey] = React.useState(1);
   const [isLoading, setIsLoading] = React.useState(true);
+  const [isEngineOnline, setIsEngineOnline] = React.useState(false);
+  const [isLaunching, setIsLaunching] = React.useState(false);
+
+  // 检查 n8n 引擎健康状态
+  const checkEngine = React.useCallback(async () => {
+    try {
+      const res = await fetch('http://127.0.0.1:5678/rest/settings', { method: 'GET', mode: 'cors' }).catch(() => null);
+      if (res && res.status === 200) {
+        setIsEngineOnline(true);
+        return true;
+      }
+    } catch { /* noop */ }
+    setIsEngineOnline(false);
+    return false;
+  }, []);
+
+  React.useEffect(() => {
+    void checkEngine();
+    const timer = setInterval(() => { void checkEngine(); }, 4000);
+    return () => clearInterval(timer);
+  }, [checkEngine]);
+
+  const handleLaunchEngine = React.useCallback(async () => {
+    setIsLaunching(true);
+    try {
+      // 触发后端尝试自愈拉起
+      await fetch('/api/plugins/dsh-workflow/start-engine', { method: 'POST' }).catch(() => null);
+      // 持续轮询直至上线
+      for (let i = 0; i < 15; i++) {
+        await new Promise((r) => setTimeout(r, 1000));
+        const ok = await checkEngine();
+        if (ok) {
+          setIframeKey((k) => k + 1);
+          setIsLoading(true);
+          break;
+        }
+      }
+    } finally {
+      setIsLaunching(false);
+    }
+  }, [checkEngine]);
 
   React.useEffect(() => {
     document.documentElement.style.setProperty('--dsw-workflow-width', `${workflowWidth}px`);
@@ -200,12 +241,44 @@ const StudioView: React.FC<StudioViewProps> = ({ initialCenterBasis, initialPane
         <div className="dsw-view-toolbar" style={{ background: 'var(--glass-bg)', height: 48, padding: '0 12px' }}>
           <div className="dsw-toolbar-left" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <div className="dsw-app-title" style={{ fontSize: 13, fontWeight: 700 }}>⚡ 工作流 Studio</div>
-            <span className="dsw-mode-badge" style={{ background: 'rgba(255, 109, 90, 0.12)', color: '#ff6d5a', borderColor: 'rgba(255, 109, 90, 0.3)', fontWeight: 600 }}>
-              n8n 官方原生
+            <span
+              className="dsw-mode-badge"
+              style={{
+                background: isEngineOnline ? 'rgba(16, 185, 129, 0.12)' : 'rgba(239, 68, 68, 0.12)',
+                color: isEngineOnline ? '#10b981' : '#ef4444',
+                borderColor: isEngineOnline ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)',
+                fontWeight: 600,
+              }}
+            >
+              {isEngineOnline ? '● 引擎运行中' : '○ 引擎离线'}
             </span>
           </div>
 
           <div className="dsw-toolbar-right" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {!isEngineOnline && (
+              <button
+                type="button"
+                className="dsw-btn-icon"
+                onClick={handleLaunchEngine}
+                disabled={isLaunching}
+                title="启动本地 n8n 引擎服务"
+                style={{
+                  width: 'auto',
+                  padding: '0 10px',
+                  height: 28,
+                  fontSize: 12,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  background: '#10b981',
+                  color: '#ffffff',
+                  borderColor: '#059669',
+                  cursor: isLaunching ? 'not-allowed' : 'pointer',
+                }}
+              >
+                {isLaunching ? '⏳ 启动中...' : '▶ 启动引擎'}
+              </button>
+            )}
             <button
               type="button"
               className="dsw-btn-icon"

@@ -22,6 +22,7 @@ import {
 import { WorkflowFileWatcher } from "./watcher.js";
 import { RetentionCleaner, type RetentionPolicy } from "./retention.js";
 import { ensureN8nWorkflowSkillInstalled } from "./skill-installer.js";
+import { startN8nService } from "./n8n-daemon.js";
 
 export interface WorkflowControllerOptions {
   workflowsDir?: string;
@@ -94,6 +95,7 @@ export class WorkflowController {
 
   constructor(engine: WorkflowEngine, opts: WorkflowControllerOptions = {}) {
     ensureN8nWorkflowSkillInstalled();
+    void startN8nService().catch((e) => console.warn('[dsh-workflow] n8n auto-start notice:', e));
     this.engine = engine;
     this.workflowsDir = opts.workflowsDir ?? path.resolve(".dsh/workflows");
     this.onRegistryChange = opts.onRegistryChange;
