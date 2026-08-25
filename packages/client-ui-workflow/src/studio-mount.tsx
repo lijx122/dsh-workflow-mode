@@ -168,7 +168,8 @@ const StudioView: React.FC<StudioViewProps> = ({ initialCenterBasis, initialPane
     window.addEventListener('pointercancel', finish);
   }, [initialPanelWidth]);
 
-  const n8nUrl = typeof window !== 'undefined' ? `${window.location.origin}/n8n/` : '/n8n/';
+  // 默认直接指向本地修建完毕的 n8n 纯净工作台（http://localhost:8080/ 或 /n8n/ 代理）
+  const n8nUrl = typeof window !== 'undefined' ? (window.location.port === '8080' ? '/' : 'http://localhost:8080/') : 'http://localhost:8080/';
 
   return (
     <div style={{ display: 'flex', flexDirection: 'row', height: '100%', width: '100%', position: 'relative' }}>

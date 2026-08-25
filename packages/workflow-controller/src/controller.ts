@@ -21,6 +21,7 @@ import {
 
 import { WorkflowFileWatcher } from "./watcher.js";
 import { RetentionCleaner, type RetentionPolicy } from "./retention.js";
+import { ensureN8nWorkflowSkillInstalled } from "./skill-installer.js";
 
 export interface WorkflowControllerOptions {
   workflowsDir?: string;
@@ -92,6 +93,7 @@ export class WorkflowController {
   onRegistryChange?: (file: string) => void;
 
   constructor(engine: WorkflowEngine, opts: WorkflowControllerOptions = {}) {
+    ensureN8nWorkflowSkillInstalled();
     this.engine = engine;
     this.workflowsDir = opts.workflowsDir ?? path.resolve(".dsh/workflows");
     this.onRegistryChange = opts.onRegistryChange;

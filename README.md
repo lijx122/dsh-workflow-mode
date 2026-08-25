@@ -1,37 +1,71 @@
 # dsh-workflow-mode
 
-> DeepSeek Harness 第 5 种 Agent Preset —— 工作流模式（Workflow Mode）
+> **DeepSeek Harness 工作流模式（Workflow Studio / n8n Pure Zero-Auth Engine）**
 
-## 一句话定位
+[![License](https://img.shields.io/badge/license-MIT%20%2F%20Sustainable%20Use%20License-blue.svg)](./LICENSE)
 
-以 **JSON DSL 为单一真值来源**、**Agent 负责生成/修改 JSON**、**Web GUI React Flow 画布负责可视化审阅**、**Cordis 插件体系负责确定性 DAG 执行** 的人机协作自动化流水线模式。
+---
 
-## 核心特性
+## 🌟 一句话定位
 
-- **确定性 DAG 执行**：拓扑排序调度，节点级显式变量流（`{{#node_id.output}}`），无上下文污染。
-- **Agent 直改 JSON**：自然语言一句话编排/重构/自愈工作流，无需手动拖拽。
-- **DSH 插件原生映射**：已安装插件（tool-bash / dsh-ssh / task-board 等）自动反射为 Plugin Tool 节点。
-- **人机断点协同**：高危操作前 Human 节点暂停，等待 GUI 审批后继续。
+集成了 **深度修建版 n8n 纯净工作流引擎** 的 DSH 插件：
+- **Zero-Auth 零鉴权**：本地自动以最高权限 Owner 身份运行，彻底剥离多余账号注册与登录跳转；
+- **DSH 网关原生直连**：自动读取 `~/.dsh/settings.yaml` 与 `~/.dsh/.credentials.yaml`，免凭证零配置直接调用大模型（包含 Claude、Gemini、Grok、DeepSeek 全量模型）；
+- **全量深度汉化**：界面与右侧节点抽屉、参数设置（NDV）全中文汉化；
+- **DSH Agent 智能操作契约**：插件安装时自动注册 `n8n-workflow` 技能，支持 Agent 一句话通过免密 API 全自动创建、编排、更新与执行工作流。
 
-## 文档索引
+---
 
-| 文档 | 内容 |
-|------|------|
-| [REQUIREMENTS.md](./REQUIREMENTS.md) | 功能需求清单（FR 编号逐条验收） |
-| [ARCHITECTURE.md](./ARCHITECTURE.md) | 架构设计：平面分层、节点体系、DSL 规范 |
-| [IMPLEMENTATION_PLAN.md](./IMPLEMENTATION_PLAN.md) | 实施计划：接口契约、任务依赖、任务列表 |
-| [TECH_DEBT.md](./TECH_DEBT.md) | 技术债清单 |
-| [CHANGELOG.md](./CHANGELOG.md) | 变更与回滚记录 |
+## 🚀 核心功能与亮点
 
-## 产物结构
+1. **纯净画板 & 零登录阻扰**：
+   - 打开即直达工作流画布（`/workflow/new`），彻底剥离了商业推广、遥测追踪、企业多租户菜单。
+2. **DSH 大模型 (DSH Chat Model) 归一化**：
+   - 拖入 AI Agent 连接大模型节点无需配置任何凭证；
+   - 自动复用本地 DSH 环境与网关配置（`https://web.shieldcell.cn/v1`），支持流式生成、思维链（Reasoning）与 Tool Calling。
+3. **Agent 自愈与编排规范**：
+   - 插件内置 `skills/n8n-workflow/SKILL.md`，安装后自动安装至 `~/.dsh/skills/n8n-workflow`；
+   - Agent 可直接调用本地免密 REST API：
+     - `GET /rest/workflows`（查询列表）
+     - `POST /rest/workflows`（创建工作流）
+     - `POST /rest/workflows/:id/run`（执行并轮询获取结果）
+
+---
+
+## 📦 插件结构
 
 ```
 dsh-workflow-mode/
+├─ skills/
+│  └─ n8n-workflow/           # 自动分发到 ~/.dsh/skills 的标准 Agent 技能契约
 ├─ packages/
-│  ├─ schema/                 # @dsh-workflow/schema: DSL Schema 与 validateWorkflow 校验器
-│  ├─ engine/                 # @dsh-workflow/engine: DAG 引擎核心与 21 节点执行器
-│  ├─ client-ui-workflow/     # @dsh-workflow/client-ui-workflow: Web GUI React Flow 画布插件
-│  └─ workflow-controller/    # @dsh-workflow/workflow-controller: 控制器十一动作、热重载与保留策略
-├─ config/agent-presets/workflow/ # Preset 注册
-└─ examples/workflows/            # 示例工作流 (ci-deploy.json, batch-report.json)
+│  ├─ client-ui-workflow/     # DSH Web GUI 侧边栏与嵌入式工作台插件
+│  ├─ workflow-controller/    # 插件后端控制器（包含自动安装 Skill 逻辑）
+│  ├─ engine/                 # 工作流执行器
+│  └─ schema/                 # 数据模型与校验层
+├─ README.md                  # 插件使用文档
+├─ README_DSH_AGENT.md        # 面向 Agent 的免密 API 契约速查
+└─ LICENSE                    # 开源许可协议 (MIT / Sustainable Use)
 ```
+
+---
+
+## 🔧 安装与使用
+
+### 1. 安装方式（ShieldCell / DSH 插件市场）
+在 DSH 插件市场中搜索 **`dsh-workflow-mode`** 或通过聚合包一键安装。
+安装后插件将自动注册侧边栏入口 **「工作流 Studio」**，并自动下发 `n8n-workflow` 技能。
+
+### 2. 独立/开发启动
+```bash
+# 进入构建目录一键启动
+.\start.cmd
+```
+浏览器打开 `http://localhost:8080` 即可开始绘制工作流。
+
+---
+
+## 📄 开源许可说明 (License)
+
+本项目核心插件框架与 DSH 桥接部分遵循 **MIT License**。
+内嵌/修建的 n8n 工作流引擎遵循 **Fair-code (Sustainable Use License)** 协议，允许个人与团队自由进行内部集成与自托管使用。
