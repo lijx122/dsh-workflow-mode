@@ -123,12 +123,12 @@ export function apply(ctx: unknown): void {
       },
     };
 
-    // 入口常驻可见，同步侧边栏高亮与工作台状态。
+    // 入口常驻左侧栏导航（与任务看板、SSH 保持一致），用户随时可点击展开/收起工作台
     const syncUi = (): void => {
       try {
         const snapshot = gate.getSnapshot();
         studio.handleGate(snapshot);
-        entry.setVisible(snapshot.shouldShow);
+        entry.setVisible(true);
         entry.setActive(studio.isOpen());
       } catch (error) {
         console.error('[dsh-workflow] ui sync failed:', error);
