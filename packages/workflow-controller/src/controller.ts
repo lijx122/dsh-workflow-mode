@@ -126,6 +126,9 @@ export class WorkflowController {
             (current ? current.version : (this.versions.get(file) ?? 0)) + 1;
           this.registry.set(file, { dsl, version });
           this.versions.set(file, version);
+          if ((dsl as any).nodes && (dsl as any).connections) {
+            void syncWorkflowToN8n(dsl as any).catch(() => {});
+          }
           if (this.onRegistryChange) {
             this.onRegistryChange(file);
           }
@@ -782,5 +785,56 @@ export class WorkflowController {
     if (this.fileWatcher) {
       await this.fileWatcher.stop();
     }
+  }
+}
+
+/**
+ * 实时同步工作流至本地 n8n REST API (Zero-Auth)
+ */
+export async function syncWorkflowToN8n(
+  workflow: { name?: string; nodes?: any[]; connections?: any; settings?: any; pinData?: any },
+  baseUrl = "http://127.0.0.1:5678"
+): Promise<{ ok: boolean; id?: string; message?: string }> {
+  if (!workflow || !Array.isArray(workflow.nodes) || typeof workflow.connections !== "object") {
+    return { ok: false, message: "Not an n8n workflow payload" };
+  }
+  const name = workflow.name || "Untitled Workflow";
+  try {
+    const listRes = await fetch(`${baseUrl}/rest/workflows`, { method: "GET" });
+    if (!listRes.ok) return { ok: false, message: `n8n query failed: ${listRes.status}` };
+    const listData = (await listRes.json()) as { data?: Array<{ id: string; name: string }> };
+    const existing = listData?.data?.find((w) => w.name === name);
+
+    const payload = {
+      name,
+      nodes: workflow.nodes,
+      connections: workflow.connections,
+      settings: workflow.settings || { executionOrder: "v1" },
+      pinData: workflow.pinData || {},
+    };
+
+    if (existing) {
+      const updateRes = await fetch(`${baseUrl}/rest/workflows/${existing.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (updateRes.ok) {
+        return { ok: true, id: existing.id, message: "Workflow updated in n8n" };
+      }
+    } else {
+      const createRes = await fetch(`${baseUrl}/rest/workflows`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (createRes.ok) {
+        const created = (await createRes.json()) as { id: string };
+        return { ok: true, id: created.id, message: "Workflow created in n8n" };
+      }
+    }
+    return { ok: false, message: "Failed to save workflow to n8n" };
+  } catch (err: any) {
+    return { ok: false, message: err?.message || String(err) };
   }
 }

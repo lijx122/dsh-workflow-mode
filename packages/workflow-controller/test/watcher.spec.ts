@@ -283,4 +283,52 @@ describe("WorkflowFileWatcher & Hot-Reload", () => {
 
     await controller.stopWatcher();
   });
+
+  it("7. 写入 n8n 原生工作流 JSON → 自动识别并通过 onValid 触发", async () => {
+    const validEvents: Array<{ file: string; dsl: any }> = [];
+
+    const watcher = new WorkflowFileWatcher({
+      workflowsDir: tmpDir,
+      debounceMs: 50,
+      onValid: (file, dsl) => {
+        validEvents.push({ file, dsl });
+      },
+      onInvalid: () => {},
+    });
+
+    watcher.start();
+
+    const n8nWorkflowJson = {
+      name: "n8n-test-flow",
+      nodes: [
+        {
+          id: "node-1",
+          name: "Schedule Trigger",
+          type: "n8n-nodes-base.scheduleTrigger",
+          position: [240, 300],
+        },
+      ],
+      connections: {
+        "Schedule Trigger": {
+          main: [],
+        },
+      },
+      settings: { executionOrder: "v1" },
+    };
+
+    fs.writeFileSync(
+      path.join(tmpDir, "n8n-flow.json"),
+      JSON.stringify(n8nWorkflowJson, null, 2),
+      "utf-8",
+    );
+
+    await waitUntil(() => validEvents.length > 0);
+
+    expect(validEvents).toHaveLength(1);
+    expect(validEvents[0].file).toBe("n8n-flow.json");
+    expect(validEvents[0].dsl.name).toBe("n8n-test-flow");
+    expect(validEvents[0].dsl.nodes).toHaveLength(1);
+
+    await watcher.stop();
+  });
 });

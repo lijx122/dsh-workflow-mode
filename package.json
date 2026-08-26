@@ -17,6 +17,7 @@
   ],
   "scripts": {
     "build": "pnpm -r build",
+    "build:n8n": "cd packages/n8n-embedded && pnpm --filter @n8n/stores build && pnpm --filter n8n build && pnpm --filter n8n-editor-ui build",
     "test": "pnpm -r test"
   }
 }

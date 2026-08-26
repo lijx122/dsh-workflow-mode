@@ -137,6 +137,17 @@ export class WorkflowFileWatcher {
       return;
     }
 
+    const isN8nWorkflow =
+      typeof parsed === "object" &&
+      parsed !== null &&
+      Array.isArray((parsed as any).nodes) &&
+      typeof (parsed as any).connections === "object";
+
+    if (isN8nWorkflow) {
+      this.opts.onValid(relativeFile, parsed as any);
+      return;
+    }
+
     const val = validateWorkflow(parsed);
     if (val.ok) {
       this.opts.onValid(relativeFile, parsed as WorkflowDSL);

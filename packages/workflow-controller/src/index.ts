@@ -1,4 +1,4 @@
-export { WorkflowController } from "./controller.js";
+export { WorkflowController, syncWorkflowToN8n } from "./controller.js";
 export type {
   WorkflowControllerOptions,
   RunHistorySummary,

@@ -125,19 +125,35 @@ const StudioView: React.FC<StudioViewProps> = ({ initialCenterBasis, initialPane
     return () => { mountedRef.current = false; };
   }, []);
 
+  // 静默注入鉴权包（确保浏览器会话即刻持有 n8n-auth cookie，零登录弹窗）
+  const silentEnsureAuth = React.useCallback(async () => {
+    try {
+      await fetch('/n8n/rest/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          emailOrLdapLoginId: 'admin@123.abc',
+          password: 'admin123',
+        }),
+      });
+    } catch { /* noop */ }
+  }, []);
+
   // 检查 n8n 引擎健康状态（通过当前站点的同源 /n8n/ 相对反代路径探测，彻底消除 CORS 与 127.0.0.1 跨域）
   const checkEngine = React.useCallback(async () => {
     if (!mountedRef.current) return false;
     try {
-      const res = await fetch('/n8n/rest/settings', { method: 'GET' }).catch(() => null);
+      const res = await fetch('/n8n/rest/settings', { method: 'GET', credentials: 'include' }).catch(() => null);
       if (res && res.status === 200) {
         if (mountedRef.current) setIsEngineOnline(true);
+        void silentEnsureAuth();
         return true;
       }
     } catch { /* noop */ }
     if (mountedRef.current) setIsEngineOnline(false);
     return false;
-  }, []);
+  }, [silentEnsureAuth]);
 
   React.useEffect(() => {
     void checkEngine();

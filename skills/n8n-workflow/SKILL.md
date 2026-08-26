@@ -262,7 +262,9 @@ n8n 工作流顶层为单一 JSON 对象：
 
 ## 四、Zero-Auth 本地 REST API 操作契约
 
-在当前纯净版 n8n 服务中，后端已接入 Zero-Auth 机制（本地请求自动以 Instance Owner 身份执行），无需任何 Cookie 或 API Key 即可全功能调用。
+在当前纯净版 n8n 服务中，后端已接入 Zero-Auth 机制（本地请求自动以 Instance Owner 身份执行），无需任何 Cookie 或 API Key 即可全功能调用。同时内置超级管理员凭据供静默双轨鉴权保底：
+- **内置超级管理员账号**：`Email: admin@123.abc` / `Password: admin123`（兼容 `admin@n8n.local` / `admin123456`）
+- **画板双向热同步机制**：Agent 编写或修改工作区 `.dsh/workflows/*.json` 文件后，控制器内部 `WorkflowFileWatcher` 会自动解析拓扑并调用 n8n 本地 API 导入/更新工作流，画布前端无感实时呈现最新节点拓扑。
 
 ### 1. 核心 API 端点速查
 | 功能 | Method | URL | 关键入参 / 说明 |

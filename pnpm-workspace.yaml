@@ -1,2 +1,5 @@
 packages:
-  - "packages/*"
+  - "packages/schema"
+  - "packages/engine"
+  - "packages/workflow-controller"
+  - "packages/client-ui-workflow"

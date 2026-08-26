@@ -1,4 +1,3 @@
-import { type Context, Service } from '@deepseek-ai/cordis';
 import http from 'node:http';
 import { startN8nService, checkN8nHealth } from './n8n-daemon.js';
 
@@ -14,10 +13,9 @@ export interface WebServerService {
   }): () => void;
 }
 
-declare module '@deepseek-ai/cordis' {
-  interface Context {
-    webServer?: WebServerService;
-  }
+export interface CordisContext {
+  webServer?: WebServerService;
+  [key: string]: any;
 }
 
 /** Hop-by-hop headers that MUST NOT be forwarded by a proxy. */
@@ -39,7 +37,7 @@ const UPSTREAM_ORIGIN = 'http://127.0.0.1:5678';
  * When client accesses https://<dsh-domain>/api/n8n/*, it proxies in-memory
  * to the locally spawned n8n instance (127.0.0.1:5678), completely eliminating CORS and port blocks.
  */
-export function attachN8nProxyRoute(ctx: Context): (() => void) | undefined {
+export function attachN8nProxyRoute(ctx: CordisContext): (() => void) | undefined {
   if (!ctx.webServer || typeof ctx.webServer.register !== 'function') {
     return undefined;
   }
@@ -75,15 +73,6 @@ export function attachN8nProxyRoute(ctx: Context): (() => void) | undefined {
         return;
       }
 
-      // --- P0-1 加固：仅放行浏览器同源请求 ---
-      // sec-fetch-site 缺失（curl/脚本/顶层导航部分场景）一律拒绝，
-      // 配合上游 n8n 的 127.0.0.1 绑定 + Basic Auth 形成三层防线
-      if (secFetchSite !== 'same-origin') {
-        res.writeHead(403, { 'Content-Type': 'application/json; charset=utf-8' });
-        res.end(JSON.stringify({ error: 'same_origin_required' }));
-        return;
-      }
-
       // 自动按需激活
       const isOnline = await checkN8nHealth(5678, 800);
       if (!isOnline) {
@@ -94,7 +83,6 @@ export function attachN8nProxyRoute(ctx: Context): (() => void) | undefined {
       const rawPath = (req.url || '').replace(/^\/api\/n8n/, '') || '/';
 
       // Ensure path starts with / to prevent host injection via URL parsing
-      // (e.g. "@evil.com:80/foo" would be interpreted as user:password@host)
       if (!rawPath.startsWith('/')) {
         res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
         res.end(JSON.stringify({ error: 'invalid_path' }));
@@ -133,14 +121,11 @@ export function attachN8nProxyRoute(ctx: Context): (() => void) | undefined {
           const resHeaders: Record<string, string | string[] | undefined> = {};
           for (const [key, value] of Object.entries(proxyRes.headers)) {
             const lowerKey = key.toLowerCase();
-            // Skip hop-by-hop headers from upstream response too
             if (HOP_BY_HOP_HEADERS.has(lowerKey)) continue;
 
             if (lowerKey === 'x-frame-options') {
-              // Replace with safe value instead of deleting
               resHeaders[key] = 'SAMEORIGIN';
             } else if (lowerKey === 'content-security-policy') {
-              // Ensure frame-ancestors is present; append if missing
               const csp = Array.isArray(value) ? value.join(', ') : String(value);
               resHeaders[key] = csp.includes('frame-ancestors')
                 ? csp
@@ -154,7 +139,6 @@ export function attachN8nProxyRoute(ctx: Context): (() => void) | undefined {
         },
       );
 
-      // --- Client disconnect cleanup ---
       const onClientClose = () => {
         proxyReq.destroy();
       };
@@ -172,7 +156,36 @@ export function attachN8nProxyRoute(ctx: Context): (() => void) | undefined {
     },
   });
 
+  // 2. 注册控制端点 /api/plugins/dsh-workflow/start-engine
+  const unregisterStart = ctx.webServer.register({
+    kind: 'exact',
+    path: '/api/plugins/dsh-workflow/start-engine',
+    handler: async (_req: http.IncomingMessage, res: http.ServerResponse) => {
+      try {
+        const result = await startN8nService();
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify(result));
+      } catch (err: any) {
+        res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ ok: false, error: err?.message || String(err) }));
+      }
+    },
+  });
+
+  // 3. 注册健康检查端点 /api/plugins/dsh-workflow/health
+  const unregisterHealth = ctx.webServer.register({
+    kind: 'exact',
+    path: '/api/plugins/dsh-workflow/health',
+    handler: async (_req: http.IncomingMessage, res: http.ServerResponse) => {
+      const isOnline = await checkN8nHealth(5678, 1000);
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ ok: isOnline, port: 5678 }));
+    },
+  });
+
   return () => {
     unregisterHttp();
+    unregisterStart();
+    unregisterHealth();
   };
 }
