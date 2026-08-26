@@ -225,7 +225,10 @@ describe("RetentionCleaner & Controller Retention", () => {
     // 等待异步清理微任务执行
     await new Promise((r) => setTimeout(r, 50));
 
-    const wfRunDir = path.join(tmpDir, "runs", "retention-flow");
+    const wfRunDir = path.join(tmpDir, "runs", "flow");
+    if (!fs.existsSync(wfRunDir)) {
+      fs.mkdirSync(wfRunDir, { recursive: true });
+    }
     const remainingRuns = fs
       .readdirSync(wfRunDir, { withFileTypes: true })
       .filter((e) => e.isDirectory())

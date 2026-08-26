@@ -36,7 +36,7 @@
 
 .trigger:hover,
 .btn:hover {
-  background: var(--hover-fill);
+  background: var(--dsw-hover-fill);
 }
 
 .trigger:active,
@@ -70,11 +70,11 @@
   width: 272px;
   z-index: 80;
   padding: 6px;
-  background: var(--glass-bg);
+  background: var(--dsw-glass-bg);
   backdrop-filter: blur(16px) saturate(140%);
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 10px;
-  box-shadow: var(--shadow-glass);
+  box-shadow: var(--dsw-shadow-glass);
 }
 
 .item {
@@ -94,16 +94,16 @@
 }
 
 .item:hover {
-  background: var(--hover-fill);
+  background: var(--dsw-hover-fill);
   color: var(--dsw-alias-label-primary);
 }
 
 /* 活动项高亮：品牌蓝 tint 三件套（bg / text / border 成套使用） */
 .itemActive,
 .itemActive:hover {
-  background: var(--tint-bg);
-  color: var(--tint-text);
-  border-color: var(--tint-border);
+  background: var(--dsw-tint-bg);
+  color: var(--dsw-tint-text);
+  border-color: var(--dsw-tint-border);
 }
 
 .itemName {
@@ -154,7 +154,7 @@
 }
 
 .actionBtn:hover {
-  background: var(--hover-fill);
+  background: var(--dsw-hover-fill);
   color: var(--dsw-alias-label-primary);
 }
 
@@ -197,10 +197,10 @@
   border-radius: 8px;
   font-size: 12px;
   line-height: 1.5;
-  background: var(--glass-bg);
+  background: var(--dsw-glass-bg);
   backdrop-filter: blur(16px);
   border: 1px solid var(--dsw-alias-border-l2);
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--dsw-shadow-card);
 }
 
 .noticeError {
@@ -224,7 +224,7 @@
 
 .noticeClose:hover {
   color: var(--dsw-alias-label-primary);
-  background: var(--hover-fill);
+  background: var(--dsw-hover-fill);
 }
 
 /* 动效降级（§3.4） */

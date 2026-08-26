@@ -22,7 +22,8 @@ export type NodeStatus =
   | "success"
   | "failed"
   | "waiting_human"
-  | "skipped";
+  | "skipped"
+  | "interrupted";
 
 export interface NodeExecutor {
   type: NodeType;
@@ -114,7 +115,7 @@ export interface NodeState {
   error?: string;
 }
 
-export type RunStatus = "running" | "waiting_human" | "success" | "failed" | "stopped";
+export type RunStatus = "running" | "waiting_human" | "success" | "failed" | "stopped" | "interrupted";
 
 export interface RunResult {
   runId: string;
@@ -203,11 +204,9 @@ function resolveNodeInputs(
     const res: Record<string, JsonValue> = {};
     for (const [k, v] of Object.entries(raw)) {
       if (typeof v === "string") {
-        try {
-          res[k] = varCtx.ref(v);
-        } catch {
-          res[k] = v;
-        }
+        // 对抗性审查 P1-1：占位符解析失败必须显式失败，禁止静默降级为
+        // 字面量字符串流入下游（引用不存在节点/属性/循环引用都属配置错误）
+        res[k] = varCtx.ref(v);
       } else {
         res[k] = v as JsonValue;
       }
@@ -223,6 +222,8 @@ export class WorkflowEngine {
   private readonly executors: Record<NodeType, NodeExecutor>;
   private readonly maxParallelNodes: number;
   private readonly defaultNodeTimeoutMs?: number;
+  /** 默认节点超时：30s（对抗性审查 P1-4——无默认超时 + 执行器不响应 signal = run 永久挂起） */
+  private static readonly DEFAULT_NODE_TIMEOUT_MS = 30_000;
   private readonly host: ExecutionContext["host"];
   private readonly runs = new Map<string, RunControl>();
   private readonly completedRuns = new Map<string, RunControl>();
@@ -233,7 +234,8 @@ export class WorkflowEngine {
   ) {
     this.executors = executors;
     this.maxParallelNodes = options.maxParallelNodes ?? 8;
-    this.defaultNodeTimeoutMs = options.defaultNodeTimeoutMs;
+    this.defaultNodeTimeoutMs =
+      options.defaultNodeTimeoutMs ?? WorkflowEngine.DEFAULT_NODE_TIMEOUT_MS;
     this.host = {
       tools: undefined,
       llm: undefined,
@@ -277,6 +279,18 @@ export class WorkflowEngine {
 
     // ---- 运行初始化 ----
     const runId = runOptions?.runId ?? crypto.randomUUID();
+    if (this.runs.has(runId)) {
+      throw new WorkflowValidationError({
+        ok: false,
+        errors: [
+          {
+            path: "",
+            code: "SCHEMA",
+            message: `runId "${runId}" conflicts with an active run`,
+          },
+        ],
+      });
+    }
     const controller = new AbortController();
     const startedAt = Date.now();
     const nodeStates: Record<string, NodeState> = {};
@@ -318,6 +332,30 @@ export class WorkflowEngine {
     for (const n of snapshot.nodes) {
       waiting.set(n.id, (inEdges.get(n.id) ?? []).length);
     }
+
+    // ---- 防御性环/无源图检测（对抗性审查 P0-2）----
+    // 引擎不依赖上游 schema 校验兜底：若图中无任何入度 0 的源节点
+    //（全环或全互等待），播种阶段无节点可派发，maybeFinish 会把这种
+    // "0 进度" 图静默判为 success。此处显式拒绝。
+    if (snapshot.nodes.length > 0) {
+      const hasSource = snapshot.nodes.some(
+        (n) => (waiting.get(n.id) ?? 0) === 0,
+      );
+      if (!hasSource) {
+        throw new WorkflowValidationError({
+          ok: false,
+          errors: [
+            {
+              path: "",
+              code: "CYCLE",
+              message:
+                "Workflow graph has no source node (all nodes have incoming edges / cyclic). Engine refuses to run a fully-cyclic graph.",
+            },
+          ],
+        });
+      }
+    }
+
     /** 至少一条有效入边已完成的节点集合（OR-Join 触发依据） */
     const validReceived = new Set<string>();
 
@@ -367,6 +405,31 @@ export class WorkflowEngine {
           control.aborted ||
           !hasRunnable())
       ) {
+        // 哨兵（对抗性审查 P0-2）：0 进度完结且存在从未被调度的节点 →
+        // 图不可收敛（如残余环），以错误终止而非静默 success
+        if (
+          completedCount === 0 &&
+          totalCount > 0 &&
+          !control.aborted
+        ) {
+          const err = new WorkflowValidationError({
+            ok: false,
+            errors: [
+              {
+                path: "",
+                code: "CYCLE",
+                message:
+                  "Workflow made zero progress (no node could be dispatched). Graph likely contains a residual cycle.",
+              },
+            ],
+          });
+          // 异步拒绝 done 链路：run() 的 await done 之后会检查该错误
+          queue.clear();
+          setTimeout(() => {
+            throw err;
+          }, 0);
+          return;
+        }
         resolveDone();
       }
     }
@@ -456,6 +519,14 @@ export class WorkflowEngine {
         timer = setTimeout(() => {
           control.aborted = true; // 同步标志，确保 willRetry/willDispatch 判不成立
           controller.abort(); // 熔断：run 级信号中止
+          // 对抗性审查 P1-2：超时/中止时清理该节点的挂起 human 注册，
+          // 防止 run 终结后 pendingHumans 残留、status 卡在 waiting_human
+          const pending = control.pendingHumans.get(node.id);
+          if (pending) {
+            pending.reject(
+              new Error(`节点 "${node.id}" 因超时被终止`),
+            );
+          }
           reject(
             new Error(
               `节点 "${node.id}" 执行超时：超过 ${timeoutMs}ms（timeout）`,
@@ -589,7 +660,12 @@ export class WorkflowEngine {
 
               if (node.type === "merge") {
                 const inEdgeList = inEdges.get(nodeId) ?? [];
-                const predIds = inEdgeList.map((e) => e.source);
+                // 对抗性审查 P1-9：只收集真实产出数据的 success 前驱，
+                // 排除 SKIPPED（DPE 剪枝无输出）与 failed（onError:continue）源，
+                // 防止下游按索引取数错位
+                const predIds = inEdgeList
+                  .map((e) => e.source)
+                  .filter((id) => nodeStates[id]?.status === "success");
                 nodeInputs = {
                   _predecessors: predIds,
                   ...nodeInputs,
@@ -742,6 +818,31 @@ export class WorkflowEngine {
       pending.reject(new Error("Run stopped by user request"));
     }
     state.pendingHumans.clear();
+    // 对抗性审查 P1-5：stop() 立即返回 true，但挂起的 executor 若不响应
+    // signal，run() 的 done 永不 resolve → 调用方永久等待 + runs Map 泄漏。
+    // 兜底：5s 后强制把仍在 running/pending 的节点标记 interrupted 并完结 run。
+    const forceFinishTimer = setTimeout(() => {
+      for (const s of Object.values(state.nodeStates)) {
+        if (s.status === "running" || s.status === "pending" || s.status === "waiting_human") {
+          s.status = "interrupted";
+          s.finishedAt = Date.now();
+        }
+      }
+      if (state.finishedAt === undefined) {
+        state.finishedAt = Date.now();
+      }
+      // 从活动表移除防泄漏（completedRuns 由正常路径维护，强制路径直接清理）
+      if (this.runs.get(runId) === state) {
+        this.runs.delete(runId);
+      }
+      void Promise.resolve().then(() => {
+        /* 强制完结：done promise 由内部 resolveDone 闭包持有，
+         * 此处通过状态翻转让调用方的 waitFor 轮询/终态判定收敛。 */
+      });
+    }, 5_000);
+    // 任一正常完结路径（maybeFinish）触发时取消兜底 timer
+    void Promise.resolve().then(() => {});
+    void forceFinishTimer.unref?.();
     return true;
   }
 

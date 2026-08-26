@@ -1,6 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { fileURLToPath } from 'node:url';
+
+// ESM 无 __dirname，用 import.meta.url 派生当前模块目录
+const currentDir = path.dirname(fileURLToPath(import.meta.url));
 
 /**
  * Automatically ensures that the n8n-workflow skill is installed into ~/.dsh/skills/n8n-workflow
@@ -11,11 +15,11 @@ export function ensureN8nWorkflowSkillInstalled(): void {
     const targetDir = path.join(userHome, '.dsh', 'skills', 'n8n-workflow');
     const targetFile = path.join(targetDir, 'SKILL.md');
 
-    // Bundled skill path
+    // Bundled skill path（兼容 src/ 与 lib/ 两种布局）
     const candidatePaths = [
-      path.resolve(__dirname, '../../../skills/n8n-workflow/SKILL.md'),
-      path.resolve(__dirname, '../../skills/n8n-workflow/SKILL.md'),
-      path.resolve(__dirname, '../skills/n8n-workflow/SKILL.md'),
+      path.resolve(currentDir, '../../../skills/n8n-workflow/SKILL.md'),
+      path.resolve(currentDir, '../../skills/n8n-workflow/SKILL.md'),
+      path.resolve(currentDir, '../skills/n8n-workflow/SKILL.md'),
     ];
 
     const sourcePath = candidatePaths.find((p) => fs.existsSync(p));

@@ -12,6 +12,7 @@ export interface WorkflowFileWatcherOptions {
   workflowsDir: string;
   onValid: (file: string, dsl: WorkflowDSL) => void;
   onInvalid: (file: string, errors: ValidateError[]) => void;
+  onDelete?: (file: string) => void;
   debounceMs?: number;
 }
 
@@ -54,7 +55,7 @@ export class WorkflowFileWatcher {
       if (this.stopped) {
         return;
       }
-      if (event !== "add" && event !== "change") {
+      if (event !== "add" && event !== "change" && event !== "unlink") {
         return;
       }
       if (!fullPath.endsWith(".json")) {
@@ -65,6 +66,18 @@ export class WorkflowFileWatcher {
       const relativeFile = path
         .relative(dir, normalizedPath)
         .replace(/\\/g, "/");
+
+      // 删除事件：清哈希与防抖计时器，直接回调 onDelete
+      if (event === "unlink") {
+        const existingTimer = this.timers.get(relativeFile);
+        if (existingTimer) {
+          clearTimeout(existingTimer);
+          this.timers.delete(relativeFile);
+        }
+        this.lastHashes.delete(relativeFile);
+        this.opts.onDelete?.(relativeFile);
+        return;
+      }
 
       const existingTimer = this.timers.get(relativeFile);
       if (existingTimer) {

@@ -37,6 +37,21 @@ function main(): void {
   // 无需也绝不能从宿主注入
   vm.createContext(sandbox);
 
+  // 中和 constructor 链：遮蔽 Function/eval 全局名，阻断
+  // inputs.constructor.constructor("return process")() 类跨 realm 逃逸路径。
+  // 注：vm Context 与宿主共享同一 Function 构造器做 contextify，
+  // 仅靠"不注入活体对象"不闭合攻击面，必须显式遮蔽（对抗性审查 P0-1）。
+  try {
+    vm.runInContext("var Function = undefined; var eval = undefined;", sandbox);
+  } catch (err) {
+    parentPort!.postMessage({
+      type: "error",
+      message: `sandbox init failed: ${err instanceof Error ? err.message : String(err)}`,
+    });
+    // primordial 失败即终止，用户代码绝不运行
+    return;
+  }
+
   try {
     // primordial 脚本：清理危险全局成员 + 深冻结注入的 inputs。
     // 由于未注入任何宿主对象，process/require 本就不存在；此处为纵深防御，

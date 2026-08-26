@@ -109,6 +109,13 @@ export class WorkflowController {
       console.warn("Retention cleaner error on startup:", err);
     });
 
+    // 启动时对账：崩溃遗留的僵尸 "running" 状态标记为 interrupted（不阻塞主流程）
+    try {
+      this.reconcileStaleRuns();
+    } catch (err) {
+      console.warn("Reconcile stale runs error on startup:", err);
+    }
+
     if (opts.watcher) {
       this.fileWatcher = new WorkflowFileWatcher({
         workflowsDir: this.workflowsDir,
@@ -126,19 +133,128 @@ export class WorkflowController {
         onInvalid: (_file, _errors) => {
           // 失败→last-good 回退通知（保持原 registry 不变）
         },
+        onDelete: (file) => {
+          this.registry.delete(file);
+          this.versions.delete(file);
+          if (this.onRegistryChange) {
+            this.onRegistryChange(file);
+          }
+        },
       });
       this.fileWatcher.start();
     }
   }
 
   /**
-   * 解析工作流文件路径
+   * 原子写入 JSON 文件：先写临时文件，再 rename 覆盖
+   */
+  private atomicWriteJson(filePath: string, data: unknown): void {
+    const tmpPath = filePath + "." + crypto.randomUUID() + ".tmp";
+    try {
+      fs.writeFileSync(tmpPath, JSON.stringify(data, null, 2), "utf-8");
+      // Windows 上 fs.renameSync 不能覆盖，先删除再 rename
+      if (fs.existsSync(filePath)) {
+        fs.rmSync(filePath, { force: true });
+      }
+      fs.renameSync(tmpPath, filePath);
+    } catch (err) {
+      // 清理临时文件
+      try { fs.rmSync(tmpPath, { force: true }); } catch { /* ignore */ }
+      throw err;
+    }
+  }
+
+  /**
+   * 解析工作流文件路径，拒绝路径穿越（sandbox escape）
    */
   private resolveFilePath(file: string): string {
-    if (path.isAbsolute(file)) {
-      return file;
+    const resolved = path.isAbsolute(file)
+      ? file
+      : path.resolve(this.workflowsDir, file);
+    // 规范化后检查是否仍在 workflowsDir 内
+    const normalized = path.resolve(resolved);
+    const base = path.resolve(this.workflowsDir);
+    if (!normalized.startsWith(base + path.sep) && normalized !== base) {
+      throw new Error(`Path traversal denied: "${file}" escapes workflow sandbox`);
     }
-    return path.resolve(this.workflowsDir, file);
+    // 对抗性审查 P1-2：字符串前缀检查不防符号链接——文件已存在时
+    // 用 realpath 复核真实落点仍在沙箱内
+    try {
+      const real = fs.realpathSync(normalized);
+      if (!real.startsWith(base + path.sep) && real !== base) {
+        throw new Error(
+          `Path traversal denied via symlink: "${file}" resolves outside workflow sandbox`,
+        );
+      }
+      return real;
+    } catch (err) {
+      if (err instanceof Error && err.message.includes("Path traversal denied")) throw err;
+      // 文件不存在等场景：保留规范化路径（后续 existsSync 自会报错）
+      return normalized;
+    }
+  }
+
+  /**
+   * 校验 runId 为 UUID 格式，拒绝路径注入（对抗性审查 P1-1）
+   */
+  private assertRunId(runId: string): void {
+    if (!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(runId)) {
+      throw new Error(`Invalid runId: "${runId}"`);
+    }
+  }
+
+  /**
+   * 对账僵尸运行：进程崩溃后残留 "running"/"waiting_human" 状态的 run 标记为 "interrupted"
+   */
+  reconcileStaleRuns(): { marked: number } {
+    const runsBase = path.join(this.workflowsDir, "runs");
+    if (!fs.existsSync(runsBase)) {
+      return { marked: 0 };
+    }
+
+    let marked = 0;
+    try {
+      const wfDirs = fs.readdirSync(runsBase, { withFileTypes: true });
+      for (const wfDir of wfDirs) {
+        if (!wfDir.isDirectory()) continue;
+        const wfDirPath = path.join(runsBase, wfDir.name);
+        let runDirs: fs.Dirent[];
+        try {
+          runDirs = fs.readdirSync(wfDirPath, { withFileTypes: true });
+        } catch {
+          continue;
+        }
+        for (const runDir of runDirs) {
+          if (!runDir.isDirectory()) continue;
+          const runJsonPath = path.join(wfDirPath, runDir.name, "run.json");
+          try {
+            if (!fs.existsSync(runJsonPath)) continue;
+            const data = JSON.parse(
+              fs.readFileSync(runJsonPath, "utf-8"),
+            ) as RunCheckpointData;
+            if (data.status === "running" || data.status === "waiting_human") {
+              data.status = "interrupted";
+              data.finishedAt = Date.now();
+              const nodes = data.nodeStates || {};
+              for (const ns of Object.values(nodes)) {
+                if (ns.status === "running" || ns.status === "waiting_human") {
+                  ns.status = "interrupted";
+                  ns.finishedAt = Date.now();
+                }
+              }
+              this.atomicWriteJson(runJsonPath, data);
+              marked++;
+            }
+          } catch {
+            // 跳过损坏的 run.json
+          }
+        }
+      }
+    } catch {
+      return { marked };
+    }
+
+    return { marked };
   }
 
   /**
@@ -222,8 +338,11 @@ export class WorkflowController {
     }
 
     const runId = crypto.randomUUID();
-    const rawName = dsl.name || path.basename(file, ".json");
-    const workflowName = rawName.replace(/[^a-zA-Z0-9_\-\u4e00-\u9fa5]/g, "_");
+    // 对抗性审查（文档一致性 P1-1）：FR-12 契约——目录名取文件 basename
+    // 经 slug 清洗仅保留 [a-zA-Z0-9_-]，dsl.name 仅作展示不参与拼路径
+    const rawName = path.basename(file, ".json") || dsl.name || "workflow";
+    let workflowName = rawName.replace(/[^a-zA-Z0-9_-]/g, "_");
+    if (!workflowName) workflowName = "workflow";
 
     const runDir = path.join(this.workflowsDir, "runs", workflowName, runId);
     fs.mkdirSync(runDir, { recursive: true });
@@ -242,7 +361,7 @@ export class WorkflowController {
       ),
     };
 
-    fs.writeFileSync(runJsonPath, JSON.stringify(checkpoint, null, 2), "utf-8");
+    this.atomicWriteJson(runJsonPath, checkpoint);
     fs.writeFileSync(eventsPath, "", "utf-8");
 
     const onEvent = (event: RunEvent) => {
@@ -269,17 +388,19 @@ export class WorkflowController {
             ns.waitingData = event.data;
           }
         }
-        fs.writeFileSync(
-          runJsonPath,
-          JSON.stringify(checkpoint, null, 2),
-          "utf-8",
-        );
+        this.atomicWriteJson(runJsonPath, checkpoint);
       } catch {
         // 日志追加容错
       }
     };
 
-    // 启动引擎运行
+    // 启动引擎运行 —— host.askUser 必须传一个「永不自行 settle 的悬挂 Promise」：
+    // 这是 Human 断点协议的核心原语。引擎层 makeCtx 会包装该 askUser：
+    // 1) 将节点标记 waiting_human、注册到 control.pendingHumans 并发出 human_wait 事件；
+    // 2) 包装 Promise 由 controller.approve()（pending.resolve）或 run 停止
+    //    （AbortSignal 经 human 执行器 signalPromise）来终止。
+    // 若改为立即 reject 或删除该 host，Human 节点会立刻失败而非等待审批（回归），
+    // 因此这里保持悬挂设计，配合 approve/stop 闭环，不构成内存泄漏。
     const promise = this.engine
       .run(dsl, params, {
         runId,
@@ -305,11 +426,7 @@ export class WorkflowController {
           };
         }
         try {
-          fs.writeFileSync(
-            runJsonPath,
-            JSON.stringify(checkpoint, null, 2),
-            "utf-8",
-          );
+          this.atomicWriteJson(runJsonPath, checkpoint);
         } catch {
           // ignore
         }
@@ -352,6 +469,8 @@ export class WorkflowController {
    * 4. status: 透传 engine 或读 run.json
    */
   status(runId: string): StatusResult | undefined {
+    // 对抗性审查 P1-1：runId 参与磁盘路径拼接，必须先校验格式
+    this.assertRunId(runId);
     const engineStatus = this.engine.status(runId);
     if (engineStatus) {
       return {
@@ -442,6 +561,9 @@ export class WorkflowController {
     const tail = typeof options === "number" ? options : options?.tail;
     const nodeId = typeof options === "object" ? options?.nodeId : undefined;
 
+    // 对抗性审查 P1-1：runId 参与磁盘路径拼接，必须先校验格式
+    this.assertRunId(runId);
+
     const runsBase = path.join(this.workflowsDir, "runs");
     let targetEventsFile: string | undefined;
 
@@ -466,9 +588,37 @@ export class WorkflowController {
     }
 
     try {
-      const raw = fs.readFileSync(targetEventsFile, "utf-8");
+      // 对抗性审查 P1-3：大文件只读尾部，防止全量载入内存（>5MB 时取末尾 512KB）
+      let raw: string;
+      const stat = fs.statSync(targetEventsFile);
+      if (stat.size > 5 * 1024 * 1024) {
+        const fd = fs.openSync(targetEventsFile, "r");
+        try {
+          const tailBytes = 512 * 1024;
+          const start = Math.max(0, stat.size - tailBytes);
+          const buf = Buffer.alloc(stat.size - start);
+          fs.readSync(fd, buf, 0, buf.length, start);
+          raw = buf.toString("utf-8");
+          // 丢弃首个可能被截断的半行
+          if (start > 0) {
+            const firstNl = raw.indexOf("\n");
+            if (firstNl >= 0) raw = raw.slice(firstNl + 1);
+          }
+        } finally {
+          fs.closeSync(fd);
+        }
+      } else {
+        raw = fs.readFileSync(targetEventsFile, "utf-8");
+      }
       const lines = raw.split("\n").filter((l: string) => l.trim().length > 0);
-      let events: RunEvent[] = lines.map((l: string) => JSON.parse(l) as RunEvent);
+      let events: RunEvent[] = [];
+      for (const l of lines) {
+        try {
+          events.push(JSON.parse(l) as RunEvent);
+        } catch {
+          // 跳过单行损坏，避免整文件丢失
+        }
+      }
 
       if (nodeId) {
         events = events.filter((e) => e.nodeId === nodeId);
@@ -496,7 +646,7 @@ export class WorkflowController {
     try {
       const targetDirs: string[] = [];
       if (name) {
-        const sanitized = name.replace(/[^a-zA-Z0-9_\-\u4e00-\u9fa5]/g, "_");
+        const sanitized = name.replace(/[^a-zA-Z0-9_-]/g, "_");
         const specific = path.join(runsBase, sanitized);
         if (fs.existsSync(specific)) targetDirs.push(specific);
       } else {

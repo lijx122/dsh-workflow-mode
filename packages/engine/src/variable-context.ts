@@ -9,10 +9,10 @@ export type JsonValue = null | boolean | number | string | JsonValue[] | { [key:
  * 节点 id 必须匹配 ^[a-zA-Z_][a-zA-Z0-9_]*$（表达式变量名安全），
  * prop 路径收紧为 (?:\w+)(?:\.\w+)*：点号分隔的多级访问，拒绝尾点 / 连续点 / 空段。
  */
-const PLACEHOLDER_RE = /^\{\{\#([a-zA-Z_][a-zA-Z0-9_]*)\.((?:\w+)(?:\.\w+)*)\}\}$/;
+const PLACEHOLDER_RE = /^\{\{\#([a-zA-Z_][a-zA-Z0-9_]*)\.((?:\w+)(?:\.\w+)*)#?\}\}$/;
 
 /** 全局版本：宽松匹配形如 {{#nodeId.path}} 的片段（仅用于定位候选），interpolate 回调内经 parsePlaceholder 严格校验 */
-const PLACEHOLDER_GLOBAL_RE = /\{\{\#([a-zA-Z_][a-zA-Z0-9_]*)\.([a-zA-Z0-9_.]*)\}\}/g;
+const PLACEHOLDER_GLOBAL_RE = /\{\{\#([a-zA-Z_][a-zA-Z0-9_]*)\.([a-zA-Z0-9_.#]*)\}\}/g;
 
 function isSinglePlaceholder(s: string): boolean {
   return PLACEHOLDER_RE.test(s);
@@ -145,13 +145,26 @@ export class VariableContext {
 
   /**
    * 表达式上下文求值。
-   * vars 以节点 id 为变量名注入原始值；禁止文本拼接后求值。
+   * vars 以节点 id 为变量名注入净化副本（无原型），禁止文本拼接后求值。
    * 错误包装为带原始表达式的 Error。
    */
   evalExpr(expr: string): JsonValue {
-    const vars: Record<string, Record<string, JsonValue>> = {};
+    // 对抗性审查 P1-7：拒绝构造器链/原型链关键字，阻断经成员访问
+    // 触达 Function 构造器的表达式注入（expr-eval 支持成员与函数调用）
+    if (/\b(constructor|__proto__|prototype|Function|globalThis|window|process)\b/.test(expr)) {
+      throw new WorkflowVarError(
+        expr,
+        `表达式含被禁止的标识符（constructor/__proto__/prototype/Function/globalThis/window/process）`,
+      );
+    }
+    const vars: Record<string, Record<string, JsonValue>> = Object.create(null);
     for (const [nodeId, outputs] of this.store) {
-      vars[nodeId] = outputs;
+      // 无原型浅拷贝：切断求值上下文到原始输出的引用与原型链
+      const clean = Object.create(null) as Record<string, JsonValue>;
+      for (const k of Object.keys(outputs)) {
+        clean[k] = outputs[k];
+      }
+      vars[nodeId] = clean;
     }
     try {
       return Parser.evaluate(expr, vars as any) as JsonValue;

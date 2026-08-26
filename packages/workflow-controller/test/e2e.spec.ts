@@ -123,7 +123,7 @@ describe("E2E WorkflowController Integration Tests", () => {
     const runJsonPath = path.join(
       tmpDir,
       "runs",
-      "代码检出-审计-部署",
+      "ci-deploy",
       runId,
       "run.json",
     );

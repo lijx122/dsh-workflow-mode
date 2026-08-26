@@ -1,5 +1,10 @@
 # 变更记录
 
+## Unreleased
+
+### 修复
+- Fixed retention.spec.ts ENOENT flaky test (added mkdirSync for wfRunDir) so retention lazy-cleanup test now passes reliably.
+
 ## v0.2.0-workflow-studio（2026-08-23）
 
 ### 新增

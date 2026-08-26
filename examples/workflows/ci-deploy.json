@@ -109,12 +109,14 @@
     {
       "id": "e5",
       "source": "gate",
+      "sourceHandle": "true",
       "target": "confirm",
       "branch": "true"
     },
     {
       "id": "e6",
       "source": "gate",
+      "sourceHandle": "false",
       "target": "deploy",
       "branch": "false"
     },

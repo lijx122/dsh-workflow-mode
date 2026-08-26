@@ -148,7 +148,7 @@ export function AddRowButton({ label, onClick }: { label: string; onClick: () =>
     <button
       type="button"
       className={styles.input}
-      style={{ cursor: "pointer", textAlign: "center", background: "var(--hover-fill)" }}
+      style={{ cursor: "pointer", textAlign: "center", background: "var(--dsw-hover-fill)" }}
       onClick={onClick}
     >
       {label}

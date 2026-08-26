@@ -31,31 +31,6 @@ let activeSessionId: string | undefined;
 
 const openListeners = new Set<() => void>();
 
-// 社区插件（任务看板、SSH 面板）互斥监听：一旦其他面板被激活，工作台自动收起
-if (typeof document !== 'undefined' && typeof MutationObserver !== 'undefined') {
-  const siblingPanelObserver = new MutationObserver((mutations) => {
-    for (const m of mutations) {
-      if (m.type === 'attributes') {
-        if (
-          document.documentElement.hasAttribute('data-dsh-taskboard-active') ||
-          document.documentElement.hasAttribute('data-dsh-ssh-active')
-        ) {
-          if (isStudioOpen) {
-            isStudioOpen = false;
-            applyActiveAttr();
-          }
-        }
-      }
-    }
-  });
-  try {
-    siblingPanelObserver.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ['data-dsh-taskboard-active', 'data-dsh-ssh-active'],
-    });
-  } catch { /* noop in non-browser env */ }
-}
-
 export function subscribeStudioOpen(listener: () => void): () => void {
   openListeners.add(listener);
   return () => {
@@ -75,7 +50,12 @@ function emitOpenChange(): void {
 
 function applyActiveAttr(): void {
   if (typeof document === 'undefined') return;
-  if (isStudioOpen) document.documentElement.setAttribute(ACTIVE_ATTR, '');
+  const hasAttr = document.documentElement.hasAttribute(ACTIVE_ATTR);
+  const shouldHave = isStudioOpen;
+  // 属性无变化时不通知：syncUi → handleGate → applyActiveAttr → emitOpenChange
+  // 双向链路依赖此守卫终止，否则门控更新与开关状态互推会无限递归。
+  if (hasAttr === shouldHave) return;
+  if (shouldHave) document.documentElement.setAttribute(ACTIVE_ATTR, '');
   else document.documentElement.removeAttribute(ACTIVE_ATTR);
   emitOpenChange();
 }
@@ -138,16 +118,24 @@ const StudioView: React.FC<StudioViewProps> = ({ initialCenterBasis, initialPane
   const [isEngineOnline, setIsEngineOnline] = React.useState(false);
   const [isLaunching, setIsLaunching] = React.useState(false);
 
-  // 检查 n8n 引擎健康状态
+  // 组件挂载守卫：卸载后不再执行异步操作
+  const mountedRef = React.useRef(true);
+  React.useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
+
+  // 检查 n8n 引擎健康状态（通过当前站点的同源 /n8n/ 相对反代路径探测，彻底消除 CORS 与 127.0.0.1 跨域）
   const checkEngine = React.useCallback(async () => {
+    if (!mountedRef.current) return false;
     try {
-      const res = await fetch('http://127.0.0.1:5678/rest/settings', { method: 'GET', mode: 'cors' }).catch(() => null);
+      const res = await fetch('/n8n/rest/settings', { method: 'GET' }).catch(() => null);
       if (res && res.status === 200) {
-        setIsEngineOnline(true);
+        if (mountedRef.current) setIsEngineOnline(true);
         return true;
       }
     } catch { /* noop */ }
-    setIsEngineOnline(false);
+    if (mountedRef.current) setIsEngineOnline(false);
     return false;
   }, []);
 
@@ -158,22 +146,27 @@ const StudioView: React.FC<StudioViewProps> = ({ initialCenterBasis, initialPane
   }, [checkEngine]);
 
   const handleLaunchEngine = React.useCallback(async () => {
+    if (!mountedRef.current) return;
     setIsLaunching(true);
     try {
       // 触发后端尝试自愈拉起
       await fetch('/api/plugins/dsh-workflow/start-engine', { method: 'POST' }).catch(() => null);
       // 持续轮询直至上线
       for (let i = 0; i < 15; i++) {
+        if (!mountedRef.current) break;
         await new Promise((r) => setTimeout(r, 1000));
+        if (!mountedRef.current) break;
         const ok = await checkEngine();
         if (ok) {
-          setIframeKey((k) => k + 1);
-          setIsLoading(true);
+          if (mountedRef.current) {
+            setIframeKey((k) => k + 1);
+            setIsLoading(true);
+          }
           break;
         }
       }
     } finally {
-      setIsLaunching(false);
+      if (mountedRef.current) setIsLaunching(false);
     }
   }, [checkEngine]);
 
@@ -182,6 +175,7 @@ const StudioView: React.FC<StudioViewProps> = ({ initialCenterBasis, initialPane
   }, [workflowWidth]);
 
   // 中栏会话与工作台之间的左侧主分隔条拖拽
+  const dragHandlersRef = React.useRef<{ onMove: (e: PointerEvent) => void; finish: () => void } | null>(null);
   const onMainSplitterPointerDown = React.useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     event.preventDefault();
     document.body.classList.add('dsw-col-resizing');
@@ -194,23 +188,39 @@ const StudioView: React.FC<StudioViewProps> = ({ initialCenterBasis, initialPane
       const maxW = Math.max(minW, window.innerWidth - 320);
       const nextW = Math.max(minW, Math.min(maxW, startWidth + delta));
       setWorkflowWidth(nextW);
-      saveLayoutMemory({ centerBasis: nextW, panelWidth: initialPanelWidth });
     };
 
     const finish = (): void => {
+      // 拖拽结束时才写入 localStorage（避免每帧 pointermove 写存储）
+      saveLayoutMemory({ centerBasis: workflowWidthRef.current, panelWidth: initialPanelWidth });
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', finish);
       window.removeEventListener('pointercancel', finish);
       document.body.classList.remove('dsw-col-resizing');
     };
 
+    dragHandlersRef.current = { onMove, finish };
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', finish);
     window.addEventListener('pointercancel', finish);
   }, [initialPanelWidth]);
 
-  // 默认直接指向本地修建完毕的 n8n 纯净工作台（http://localhost:8080/ 或 /n8n/ 代理）
-  const n8nUrl = typeof window !== 'undefined' ? (window.location.port === '8080' ? '/' : 'http://localhost:8080/') : 'http://localhost:8080/';
+  // 卸载时清理拖拽状态：移除 body 类并摘除 window 级监听器（防止拖拽中 unmount 后残留）
+  React.useEffect(() => {
+    return () => {
+      document.body.classList.remove('dsw-col-resizing');
+      if (dragHandlersRef.current !== null) {
+        const { onMove, finish } = dragHandlersRef.current;
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', finish);
+        window.removeEventListener('pointercancel', finish);
+        dragHandlersRef.current = null;
+      }
+    };
+  }, []);
+
+  // 默认直接使用同源反代路径，消除所有跨源、端口限制与 Mixed Content 阻断
+  const n8nUrl = typeof window !== 'undefined' ? `${window.location.origin}/n8n/` : '/n8n/';
 
   return (
     <div style={{ display: 'flex', flexDirection: 'row', height: '100%', width: '100%', position: 'relative' }}>
@@ -238,7 +248,7 @@ const StudioView: React.FC<StudioViewProps> = ({ initialCenterBasis, initialPane
       {/* 2. 工作台主体内容 */}
       <div style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%', minWidth: 0, paddingLeft: 6 }}>
         {/* 顶部工具栏 */}
-        <div className="dsw-view-toolbar" style={{ background: 'var(--glass-bg)', height: 48, padding: '0 12px' }}>
+        <div className="dsw-view-toolbar" style={{ background: 'var(--dsw-glass-bg)', height: 48, padding: '0 12px' }}>
           <div className="dsw-toolbar-left" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <div className="dsw-app-title" style={{ fontSize: 13, fontWeight: 700 }}>⚡ 工作流 Studio</div>
             <span
@@ -296,7 +306,7 @@ const StudioView: React.FC<StudioViewProps> = ({ initialCenterBasis, initialPane
               className="dsw-btn-icon"
               onClick={() => window.open(n8nUrl, '_blank')}
               title="在新标签页中独立全屏打开 n8n"
-              style={{ width: 'auto', padding: '0 10px', height: 28, fontSize: 12, display: 'flex', alignItems: 'center', gap: 4, background: 'var(--tint-bg)', color: 'var(--tint-text)', borderColor: 'var(--tint-border)' }}
+              style={{ width: 'auto', padding: '0 10px', height: 28, fontSize: 12, display: 'flex', alignItems: 'center', gap: 4, background: 'var(--dsw-tint-bg)', color: 'var(--dsw-tint-text)', borderColor: 'var(--dsw-tint-border)' }}
             >
               ↗ 全屏独立窗口
             </button>
@@ -321,10 +331,17 @@ const StudioView: React.FC<StudioViewProps> = ({ initialCenterBasis, initialPane
               <div style={{ fontSize: 13, color: 'var(--dsw-alias-label-secondary)' }}>正在连接 n8n 官方工作流引擎...</div>
             </div>
           )}
+          {/* P0-1 安全加固：同源 iframe（/n8n/ 相对反代）显式声明最小 sandbox 授权集，
+           禁掉 plugins/presentation 等能力；referrerPolicy=no-referrer 不在请求头携带来源。
+           注意：allow-scripts + allow-same-origin 组合在同源场景下 iframe 可自改自身
+           sandbox 属性，等于无 sandbox——根治路径是把 n8n 反代挂到独立 origin
+           （不同端口/子域/独立静态托管），届时 sandbox 才能真正约束脚本。 */}
           <iframe
             key={iframeKey}
             src={n8nUrl}
             title="n8n Official Workflow Editor"
+            sandbox="allow-scripts allow-same-origin allow-forms allow-downloads allow-popups"
+            referrerPolicy="no-referrer"
             style={{
               width: '100%',
               height: '100%',
@@ -358,6 +375,7 @@ export function mountStudio(): MountController {
   let container: HTMLDivElement | undefined;
   let rendered = false;
   let rootObserver: MutationObserver | undefined;
+  let siblingPanelObserver: MutationObserver | undefined;
 
   const renderIfOpen = (): void => {
     if (container === undefined || root === undefined) return;
@@ -424,13 +442,14 @@ export function mountStudio(): MountController {
       root = createRoot(container);
       (container as DswViewContainer).__dswWorkflowRoot = root;
     }
+    // 在创建 container 后立即捕获父元素引用，避免后续 parentElement 变为 null
     const parent = container.parentElement;
     if (rootObserver === undefined && parent !== null) {
       rootObserver = new MutationObserver(() => {
         if (container === undefined) return;
-        const col = container.parentElement;
-        if (col === null || !col.isConnected) return;
-        if (!col.contains(container)) col.appendChild(container);
+        // 使用已捕获的 parent 引用，而非反复读取 container.parentElement
+        if (parent === null || !parent.isConnected) return;
+        if (!parent.contains(container)) parent.appendChild(container);
       });
       rootObserver.observe(parent, { childList: true });
     }
@@ -450,6 +469,31 @@ export function mountStudio(): MountController {
         })
       : undefined;
   waitObserver?.observe(document.body, { childList: true, subtree: true });
+
+  // 社区插件（任务看板、SSH 面板）互斥监听：移入 mount 生命周期，dispose 时得以断开
+  if (typeof document !== 'undefined' && typeof MutationObserver !== 'undefined') {
+    siblingPanelObserver = new MutationObserver((mutations) => {
+      for (const m of mutations) {
+        if (m.type === 'attributes') {
+          if (
+            document.documentElement.hasAttribute('data-dsh-taskboard-active') ||
+            document.documentElement.hasAttribute('data-dsh-ssh-active')
+          ) {
+            if (isStudioOpen) {
+              isStudioOpen = false;
+              applyActiveAttr();
+            }
+          }
+        }
+      }
+    });
+    try {
+      siblingPanelObserver.observe(document.documentElement, {
+        attributes: true,
+        attributeFilter: ['data-dsh-taskboard-active', 'data-dsh-ssh-active'],
+      });
+    } catch { /* noop in non-browser env */ }
+  }
 
   const unsubscribeOpen = subscribeStudioOpen(() => {
     ensureContainer();
@@ -480,6 +524,8 @@ export function mountStudio(): MountController {
         waitObserver?.disconnect();
         rootObserver?.disconnect();
         rootObserver = undefined;
+        siblingPanelObserver?.disconnect();
+        siblingPanelObserver = undefined;
         try {
           root?.unmount();
         } catch (error) {

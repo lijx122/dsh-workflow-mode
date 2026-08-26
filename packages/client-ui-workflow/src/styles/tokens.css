@@ -5,7 +5,7 @@
  * - 双主题机制照抄 DSH 官方主题插件：浅色变量在 body 默认层，
  *   深色整体覆盖在 body[data-ds-dark-theme] 层。本文件不自带开关。
  * - 生产 CSS 禁用 color-mix()：一切叠加色使用下方显式 rgba
- *   （含 mockup 已预计算的 --tint-* 三件套），lightningcss 不做转译。
+ *   （含 mockup 已预计算的 --dsw-tint-* 三件套），lightningcss 不做转译。
  * - 禁止硬编码黑白灰与任何已否决的靛紫色族（§3.2）；组件规则只引用语义变量。
  */
 
@@ -37,25 +37,25 @@ body {
   --dsw-alias-state-warn-primary: #f59e0b;
 
   /* 语义派生变量（全部显式 rgba / 预计算值，无 color-mix） */
-  --hover-fill: rgba(38, 49, 72, 0.06);        /* interactive-bg-hover */
-  --glass-bg: rgba(255, 255, 255, 0.78);
-  --dot-color: rgba(15, 17, 21, 0.05);
-  --edge-stroke: rgba(15, 17, 21, 0.28);
-  --port-fill: #ffffff;
-  --minimap-bg: rgba(15, 17, 21, 0.04);
-  --output-bg: #f6f7f8;
-  --output-text: #16794d;
-  --shadow-card: 0 4px 16px rgba(16, 24, 40, 0.08);
-  --shadow-glass: 0 12px 32px rgba(16, 24, 40, 0.10);
-  --splitter-handle: rgba(0, 0, 0, 0.22);
+  --dsw-hover-fill: rgba(38, 49, 72, 0.06);        /* interactive-bg-hover */
+  --dsw-glass-bg: rgba(255, 255, 255, 0.78);
+  --dsw-dot-color: rgba(15, 17, 21, 0.05);
+  --dsw-edge-stroke: rgba(15, 17, 21, 0.28);
+  --dsw-port-fill: #ffffff;
+  --dsw-minimap-bg: rgba(15, 17, 21, 0.04);
+  --dsw-output-bg: #f6f7f8;
+  --dsw-output-text: #16794d;
+  --dsw-shadow-card: 0 4px 16px rgba(16, 24, 40, 0.08);
+  --dsw-shadow-glass: 0 12px 32px rgba(16, 24, 40, 0.10);
+  --dsw-splitter-handle: rgba(0, 0, 0, 0.22);
 
-  /* 品牌蓝染色徽章（--tint-* 三件套，预计算自 business-primary） */
-  --tint-bg: rgba(65, 118, 230, 0.10);
-  --tint-text: #2f5fc4;
-  --tint-border: rgba(65, 118, 230, 0.30);
+  /* 品牌蓝染色徽章（--dsw-tint-* 三件套，预计算自 business-primary） */
+  --dsw-tint-bg: rgba(65, 118, 230, 0.10);
+  --dsw-tint-text: #2f5fc4;
+  --dsw-tint-border: rgba(65, 118, 230, 0.30);
 
   /* 品牌蓝上的前景（按钮文字/图标），双主题同值（mockup .btn-primary color） */
-  --on-brand: #ffffff;
+  --dsw-on-brand: #ffffff;
 }
 
 /* ============ 深色主题（DSH 官方 body[data-ds-dark-theme] 覆盖层，逐字照抄 mockup） ============ */
@@ -73,22 +73,22 @@ body[data-ds-dark-theme] {
   --dsw-alias-state-error-primary: #f25a5a;
   --dsw-alias-state-warn-primary: #f59e0b;
 
-  --hover-fill: rgba(255, 255, 255, 0.08);
-  --glass-bg: rgba(35, 35, 36, 0.78);
-  --dot-color: rgba(255, 255, 255, 0.04);
-  --edge-stroke: rgba(255, 255, 255, 0.22);
-  --port-fill: #151517;
-  --minimap-bg: rgba(0, 0, 0, 0.25);
-  --output-bg: #1a1a1c;
-  --output-text: #98c379;
-  --shadow-card: 0 4px 16px rgba(0, 0, 0, 0.30);
-  --shadow-glass: 0 12px 32px rgba(0, 0, 0, 0.38);
-  --splitter-handle: rgba(255, 255, 255, 0.25);
+  --dsw-hover-fill: rgba(255, 255, 255, 0.08);
+  --dsw-glass-bg: rgba(35, 35, 36, 0.78);
+  --dsw-dot-color: rgba(255, 255, 255, 0.04);
+  --dsw-edge-stroke: rgba(255, 255, 255, 0.22);
+  --dsw-port-fill: #151517;
+  --dsw-minimap-bg: rgba(0, 0, 0, 0.25);
+  --dsw-output-bg: #1a1a1c;
+  --dsw-output-text: #98c379;
+  --dsw-shadow-card: 0 4px 16px rgba(0, 0, 0, 0.30);
+  --dsw-shadow-glass: 0 12px 32px rgba(0, 0, 0, 0.38);
+  --dsw-splitter-handle: rgba(255, 255, 255, 0.25);
 
-  --tint-bg: rgba(103, 158, 254, 0.16);
-  --tint-text: #a5c4ff;
-  --tint-border: rgba(103, 158, 254, 0.35);
-  --on-brand: #ffffff;
+  --dsw-tint-bg: rgba(103, 158, 254, 0.16);
+  --dsw-tint-text: #a5c4ff;
+  --dsw-tint-border: rgba(103, 158, 254, 0.35);
+  --dsw-on-brand: #ffffff;
 }
 
 /* ==================================================================
@@ -160,10 +160,10 @@ html[data-dsh-workflow-active]:not([data-dsh-taskboard-active]):not([data-dsh-ss
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  background: var(--glass-bg);
+  background: var(--dsw-glass-bg);
   backdrop-filter: blur(16px) saturate(140%);
   border-bottom: 1px solid var(--dsw-alias-border-l1);
-  box-shadow: 0 1px 0 var(--hover-fill) inset;
+  box-shadow: 0 1px 0 var(--dsw-hover-fill) inset;
 }
 
 .dsw-toolbar-left,
@@ -185,9 +185,9 @@ html[data-dsh-workflow-active]:not([data-dsh-taskboard-active]):not([data-dsh-ss
   font-size: 11px;
   padding: 2px 7px;
   border-radius: 6px;
-  background: var(--tint-bg);
-  color: var(--tint-text);
-  border: 1px solid var(--tint-border);
+  background: var(--dsw-tint-bg);
+  color: var(--dsw-tint-text);
+  border: 1px solid var(--dsw-tint-border);
   font-weight: 500;
   white-space: nowrap;
 }
@@ -215,7 +215,7 @@ html[data-dsh-workflow-active]:not([data-dsh-taskboard-active]):not([data-dsh-ss
 
 .dsw-btn-icon:hover {
   color: var(--dsw-alias-label-primary);
-  background: var(--hover-fill);
+  background: var(--dsw-hover-fill);
 }
 
 /* ---- 主区：画布 | 分隔条 | 属性面板 ---- */
@@ -233,7 +233,7 @@ html[data-dsh-workflow-active]:not([data-dsh-taskboard-active]):not([data-dsh-ss
   position: relative;
   overflow: hidden;
   background-color: var(--dsw-alias-bg-base);
-  background-image: radial-gradient(var(--dot-color) 1.2px, transparent 1.2px);
+  background-image: radial-gradient(var(--dsw-dot-color) 1.2px, transparent 1.2px);
   background-size: 22px 22px;
 }
 
@@ -255,7 +255,7 @@ html[data-dsh-workflow-active]:not([data-dsh-taskboard-active]):not([data-dsh-ss
   flex: none;
   width: 6px;
   cursor: col-resize;
-  background: var(--hover-fill);
+  background: var(--dsw-hover-fill);
   border-left: 1px solid var(--dsw-alias-border-l1);
   border-right: 1px solid var(--dsw-alias-border-l1);
   display: flex;
@@ -267,14 +267,14 @@ html[data-dsh-workflow-active]:not([data-dsh-taskboard-active]):not([data-dsh-ss
 
 .dsw-splitter:hover,
 .dsw-splitter.is-dragging {
-  background: var(--tint-border);
+  background: var(--dsw-tint-border);
 }
 
 .dsw-splitter-handle {
   width: 3px;
   height: 36px;
   border-radius: 2px;
-  background: var(--splitter-handle);
+  background: var(--dsw-splitter-handle);
   pointer-events: none;
 }
 
@@ -291,11 +291,11 @@ body.dsw-col-resizing {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: var(--glass-bg);
+  background: var(--dsw-glass-bg);
   backdrop-filter: blur(16px) saturate(140%);
   border-left: 1px solid var(--dsw-alias-border-l1);
   border-radius: 14px 0 0 14px;
-  box-shadow: var(--shadow-glass);
+  box-shadow: var(--dsw-shadow-glass);
 }
 
 .dsw-prop-header {
@@ -306,7 +306,7 @@ body.dsw-col-resizing {
   align-items: center;
   justify-content: space-between;
   border-bottom: 1px solid var(--dsw-alias-border-l1);
-  box-shadow: 0 1px 0 var(--hover-fill) inset;
+  box-shadow: 0 1px 0 var(--dsw-hover-fill) inset;
 }
 
 .dsw-prop-title {
@@ -338,7 +338,7 @@ body.dsw-col-resizing {
   justify-content: space-between;
   gap: 12px;
   font-size: 11px;
-  background: var(--glass-bg);
+  background: var(--dsw-glass-bg);
   backdrop-filter: blur(16px);
   border-top: 1px solid var(--dsw-alias-border-l1);
   color: var(--dsw-alias-label-secondary);

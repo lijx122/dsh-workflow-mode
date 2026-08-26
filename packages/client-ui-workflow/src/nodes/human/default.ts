@@ -6,7 +6,7 @@ export const meta: NodeMeta = {
   type: "human",
   label: "人工审批",
   icon: "👤",
-  colorToken: "var(--tint-text)",
+  colorToken: "var(--dsw-tint-text)",
   group: "ai",
   badgeText: "HUMAN",
   defaultFactory(id: string): WorkflowNode {

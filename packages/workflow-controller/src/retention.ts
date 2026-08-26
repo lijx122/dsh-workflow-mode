@@ -60,7 +60,13 @@ export class RetentionCleaner {
             }
             const content = fs.readFileSync(runJsonPath, "utf-8");
             const data = JSON.parse(content);
-            if (typeof data?.startedAt === "number" && !Number.isNaN(data.startedAt)) {
+            if (
+              typeof data?.startedAt === "number" &&
+              !Number.isNaN(data.startedAt) &&
+              // 跳过进行中的运行：running / waiting_human 不可清理
+              data.status !== "running" &&
+              data.status !== "waiting_human"
+            ) {
               validRuns.push({
                 runId: runEntry.name,
                 runDir,

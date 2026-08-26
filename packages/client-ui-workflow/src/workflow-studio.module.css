@@ -32,8 +32,8 @@
 }
 
 .entry[data-active] {
-  background: var(--tint-bg, rgba(65, 118, 230, 0.10));
-  color: var(--tint-text, #2f5fc4);
+  background: var(--dsw-tint-bg, rgba(65, 118, 230, 0.10));
+  color: var(--dsw-tint-text, #2f5fc4);
   font-weight: 600;
 }
 
@@ -111,9 +111,9 @@
   font-size: 11px;
   font-weight: 600;
   border-radius: 999px;
-  background: var(--tint-bg, rgba(65, 118, 230, 0.10));
-  color: var(--tint-text, #2f5fc4);
-  border: 1px solid var(--tint-border, rgba(65, 118, 230, 0.30));
+  background: var(--dsw-tint-bg, rgba(65, 118, 230, 0.10));
+  color: var(--dsw-tint-text, #2f5fc4);
+  border: 1px solid var(--dsw-tint-border, rgba(65, 118, 230, 0.30));
 }
 
 .select {
@@ -134,7 +134,7 @@
   padding: 6px 14px;
   font-size: 13px;
   font-weight: 600;
-  color: var(--on-brand);
+  color: var(--dsw-on-brand);
   background: var(--dsw-alias-state-business-primary, #4176e6);
   border: none;
   border-radius: 6px;
@@ -181,7 +181,7 @@
   padding: 5px 12px;
   font-size: 12.5px;
   font-weight: 500;
-  color: var(--on-brand);
+  color: var(--dsw-on-brand);
   background: #ef4444;
   border: none;
   border-radius: 6px;

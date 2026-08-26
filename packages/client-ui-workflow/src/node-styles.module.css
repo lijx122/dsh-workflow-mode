@@ -9,7 +9,7 @@
  * - §10.15：生产禁用 color-mix()——叠加色一律显式预计算 rgba。
  * - §3.5 扩展调色板声明（双主题共用）：merge #059669、set_variable #ca8a04、
  *   iteration #0891b2 为 start-end/if-else/subagent/template/code 六色之外按需补充的
- *   中性变体；human 取 var(--tint-text)（品牌蓝派生令牌）以呼应 waiting_human 视觉。
+ *   中性变体；human 取 var(--dsw-tint-text)（品牌蓝派生令牌）以呼应 waiting_human 视觉。
  */
 
 /* ============ 节点卡片（240px 宽 · 高自适应 · 左 3px 类型色条） ============ */
@@ -21,7 +21,7 @@
   background: var(--dsw-alias-bg-layer-2);
   border-radius: 10px;
   border: 1px solid var(--dsw-alias-border-l2);
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--dsw-shadow-card);
   padding: 10px 12px;
   display: flex;
   flex-direction: column;
@@ -66,7 +66,7 @@
   align-items: center;
   justify-content: center;
   font-size: 13px;
-  background: var(--hover-fill);
+  background: var(--dsw-hover-fill);
   color: var(--node-tag-color, inherit);
   flex-shrink: 0;
 }
@@ -86,7 +86,7 @@
   text-transform: uppercase;
   padding: 1px 5px;
   border-radius: 4px;
-  background: var(--hover-fill);
+  background: var(--dsw-hover-fill);
   color: var(--dsw-alias-label-secondary);
   border: 1px solid var(--dsw-alias-border-l1);
   flex-shrink: 0;
@@ -129,7 +129,7 @@
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  background: var(--port-fill);
+  background: var(--dsw-port-fill);
   border: 2px solid var(--dsw-alias-border-l2);
   min-height: 0;
   min-width: 0;
@@ -183,9 +183,9 @@
   align-items: center;
   justify-content: center;
   font-size: 9px;
-  background: var(--tint-bg);
-  border: 1px solid var(--tint-border);
-  color: var(--tint-text);
+  background: var(--dsw-tint-bg);
+  border: 1px solid var(--dsw-tint-border);
+  color: var(--dsw-tint-text);
 }
 
 .selected {
@@ -241,11 +241,11 @@
   width: 208px;
   max-height: 320px;
   overflow-y: auto;
-  background: var(--glass-bg);
+  background: var(--dsw-glass-bg);
   backdrop-filter: blur(16px) saturate(140%);
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 10px;
-  box-shadow: var(--shadow-glass);
+  box-shadow: var(--dsw-shadow-glass);
   padding: 6px;
   z-index: 18;
 }
@@ -277,7 +277,7 @@
 }
 
 .item:hover {
-  background: var(--hover-fill);
+  background: var(--dsw-hover-fill);
   color: var(--dsw-alias-label-primary);
 }
 
@@ -335,7 +335,7 @@
 }
 
 .input[readonly] {
-  background: var(--hover-fill);
+  background: var(--dsw-hover-fill);
   color: var(--dsw-alias-label-tertiary);
   cursor: not-allowed;
   font-family: var(--font-mono);
@@ -370,13 +370,13 @@
 }
 
 .outputBox {
-  background: var(--output-bg);
+  background: var(--dsw-output-bg);
   border: 1px solid var(--dsw-alias-border-l1);
   border-radius: 8px;
   padding: 10px;
   font-family: var(--font-mono);
   font-size: 11px;
-  color: var(--output-text);
+  color: var(--dsw-output-text);
   line-height: 1.45;
   max-height: 130px;
   overflow-y: auto;
@@ -399,7 +399,7 @@
   bottom: 46px;
   height: 32px;
   padding: 0 4px;
-  background: var(--glass-bg);
+  background: var(--dsw-glass-bg);
   backdrop-filter: blur(16px);
   border: 1px solid var(--dsw-alias-border-l1);
   border-radius: 8px;
@@ -407,7 +407,7 @@
   align-items: center;
   gap: 2px;
   z-index: 15;
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--dsw-shadow-card);
 }
 
 .zoomBtn {
@@ -427,7 +427,7 @@
 }
 
 .zoomBtn:hover {
-  background: var(--hover-fill);
+  background: var(--dsw-hover-fill);
   color: var(--dsw-alias-label-primary);
 }
 
@@ -446,20 +446,20 @@
   bottom: 46px;
   width: 160px;
   height: 100px;
-  background: var(--glass-bg);
+  background: var(--dsw-glass-bg);
   backdrop-filter: blur(16px);
   border: 1px solid var(--dsw-alias-border-l1);
   border-radius: 10px;
   padding: 6px;
   z-index: 15;
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--dsw-shadow-card);
 }
 
 .minimapCanvas {
   position: relative;
   width: 100%;
   height: 100%;
-  background: var(--minimap-bg);
+  background: var(--dsw-minimap-bg);
   border-radius: 6px;
   overflow: hidden;
   cursor: crosshair;

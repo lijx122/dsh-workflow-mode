@@ -210,7 +210,7 @@ export const CodeNodeSchema = Type.Object({
   ...BaseNodeFields,
   type: Type.Literal("code"),
   code: Type.String(),
-  inputs: Type.Optional(Type.Record(Type.String(), Type.String())),
+  inputs: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
 });
 
 export type CodeNode = Static<typeof CodeNodeSchema>;
@@ -220,7 +220,7 @@ export const TemplateNodeSchema = Type.Object({
   ...BaseNodeFields,
   type: Type.Literal("template"),
   template: Type.String(),
-  inputs: Type.Optional(Type.Record(Type.String(), Type.String())),
+  inputs: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
 });
 
 export type TemplateNode = Static<typeof TemplateNodeSchema>;

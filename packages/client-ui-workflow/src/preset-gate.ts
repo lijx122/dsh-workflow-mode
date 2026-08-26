@@ -49,8 +49,25 @@ interface SessionsServiceLike {
   list?: ListStoreLike | undefined;
 }
 
-/** 模块级豁免集合：编排器的临时运行会话不参与门控判定。 */
+/** 模块级豁免集合：编排器的临时运行会话不参与门控判定。
+ *  最大容量 500 条，超出时按 LRU 策略淘汰。 */
 const exemptSessionIds = new Set<string>();
+const EXEMPT_MAX_SIZE = 500;
+/** 插入顺序记录，用于 LRU 淘汰（最旧的排前面）。 */
+const exemptOrder: string[] = [];
+
+function touchExempt(id: string): void {
+  const idx = exemptOrder.indexOf(id);
+  if (idx !== -1) exemptOrder.splice(idx, 1);
+  exemptOrder.push(id);
+}
+
+function evictExempt(): void {
+  while (exemptSessionIds.size > EXEMPT_MAX_SIZE && exemptOrder.length > 0) {
+    const oldest = exemptOrder.shift()!;
+    exemptSessionIds.delete(oldest);
+  }
+}
 
 /** 活跃 gate 实例的重算钩子：豁免集合变更时即时生效。 */
 const liveRefreshers = new Set<() => void>();
@@ -65,10 +82,13 @@ function pokeAll(): void {
   }
 }
 
-/** 登记豁免会话（如编排器创建的临时运行会话）。空值安全。 */
+/** 登记豁免会话（如编排器创建的临时运行会话）。空值安全。
+ *  超出容量上限时按 LRU 策略淘汰最旧条目。 */
 export function addExempt(sessionId: string | undefined | null): void {
   if (typeof sessionId !== 'string' || sessionId.length === 0) return;
+  touchExempt(sessionId);
   exemptSessionIds.add(sessionId);
+  evictExempt();
   pokeAll();
 }
 
@@ -76,6 +96,8 @@ export function addExempt(sessionId: string | undefined | null): void {
 export function removeExempt(sessionId: string | undefined | null): void {
   if (typeof sessionId !== 'string' || sessionId.length === 0) return;
   exemptSessionIds.delete(sessionId);
+  const idx = exemptOrder.indexOf(sessionId);
+  if (idx !== -1) exemptOrder.splice(idx, 1);
   pokeAll();
 }
 

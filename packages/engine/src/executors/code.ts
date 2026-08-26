@@ -46,6 +46,11 @@ export const codeExecutor: NodeExecutor = {
   ): Promise<NodeOutput> {
     const worker = new Worker(WORKER_PATH, {
       workerData: { code: node.code, inputs },
+      // 资源上限：防沙箱内代码内存爆炸拖垮宿主（对抗性审查 P0-1 加固）
+      resourceLimits: {
+        maxOldGenerationSizeMb: 128,
+        maxYoungGenerationSizeMb: 32,
+      },
     });
 
     const abortHandler = () => {

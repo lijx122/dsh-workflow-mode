@@ -14,22 +14,22 @@
   --xy-node-background-color-hover-default: transparent;
 
   /* 连线 / 连接预览 */
-  --xy-edge-stroke-default: var(--edge-stroke);
+  --xy-edge-stroke-default: var(--dsw-edge-stroke);
   --xy-edge-stroke-width-default: 2;
   --xy-edge-stroke-selected-default: var(--dsw-alias-state-business-primary);
   --xy-connectionline-stroke-default: var(--dsw-alias-state-business-primary);
   --xy-connectionline-stroke-width-default: 2;
 
   /* handle 底色（尺寸与描边在 node-styles.module.css 内覆盖） */
-  --xy-handle-background-color-default: var(--port-fill);
+  --xy-handle-background-color-default: var(--dsw-port-fill);
   --xy-handle-border-color-default: var(--dsw-alias-border-l2);
 
   /* 框选 / 背景 / 控件兜底（原生 Controls/MiniMap 已弃用，仅防残留） */
   --xy-selection-background-color-default: rgba(65, 118, 230, 0.06);
   --xy-selection-border-default: 1px dashed var(--dsw-alias-state-business-primary);
-  --xy-controls-button-background-color-default: var(--glass-bg);
+  --xy-controls-button-background-color-default: var(--dsw-glass-bg);
   --xy-controls-button-color-default: var(--dsw-alias-label-secondary);
-  --xy-minimap-background-color-default: var(--minimap-bg);
+  --xy-minimap-background-color-default: var(--dsw-minimap-bg);
   --xy-minimap-mask-background-color-default: rgba(15, 17, 21, 0.06);
 
   font-family: var(--font-sans);

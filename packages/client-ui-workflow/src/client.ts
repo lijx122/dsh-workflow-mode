@@ -26,13 +26,15 @@ function markStage(stage: string): void {
     if (typeof document === 'undefined') return;
     const prev = document.documentElement.getAttribute('data-wf-stage') ?? '';
     document.documentElement.setAttribute('data-wf-stage', prev ? prev + ',' + stage : stage);
-    // 文本镜像：head 内追加可读节点（get_text 可读，且不会被宿主覆盖）。
-    const holder = document.getElementById('wf-stage-debug')
-      ?? document.createElement('div');
-    holder.id = 'wf-stage-debug';
-    holder.style.display = 'none';
-    holder.textContent = '[wf]' + (prev ? prev + ',' + stage : stage);
-    if (holder.parentElement !== document.head) document.head.appendChild(holder);
+    // 文本镜像：head 内追加可读 meta 节点（get_text 可读，且不会被宿主覆盖）。
+    let meta = document.getElementById('wf-stage-debug') as HTMLMetaElement | null;
+    if (meta === null) {
+      meta = document.createElement('meta');
+      meta.id = 'wf-stage-debug';
+      document.head.appendChild(meta);
+    }
+    meta.name = 'wf-stage';
+    meta.content = '[wf]' + (prev ? prev + ',' + stage : stage);
   } catch { /* noop */ }
 }
 markStage('factory');
@@ -124,7 +126,9 @@ export function apply(ctx: unknown): void {
     // 入口常驻可见，同步侧边栏高亮与工作台状态。
     const syncUi = (): void => {
       try {
-        entry.setVisible(true);
+        const snapshot = gate.getSnapshot();
+        studio.handleGate(snapshot);
+        entry.setVisible(snapshot.shouldShow);
         entry.setActive(studio.isOpen());
       } catch (error) {
         console.error('[dsh-workflow] ui sync failed:', error);
