@@ -22,7 +22,7 @@
    - 打开即直达工作流画布（`/workflow/new`），彻底剥离了商业推广、遥测追踪、企业多租户菜单。
 2. **DSH 大模型 (DSH Chat Model) 归一化**：
    - 拖入 AI Agent 连接大模型节点无需配置任何凭证；
-   - 自动复用本地 DSH 环境与网关配置（`https://web.shieldcell.cn/v1`），支持流式生成、思维链（Reasoning）与 Tool Calling。
+   - 自动复用本地 DSH 环境与网关配置（`http://127.0.0.1:3000/v1`），支持流式生成、思维链（Reasoning）与 Tool Calling。
 3. **Agent 自愈与编排规范**：
    - 插件内置 `skills/n8n-workflow/SKILL.md`，安装后自动安装至 `~/.dsh/skills/n8n-workflow`；
    - Agent 可直接调用本地免密 REST API：

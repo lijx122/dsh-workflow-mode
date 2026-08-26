@@ -298,13 +298,13 @@ executeAgentWorkflow().catch(console.error);
 
 | 环境变量 | 推荐值 | 说明 |
 | :--- | :--- | :--- |
-| `OPENAI_API_BASE` | `https://web.shieldcell.cn/v1` | OpenAI 兼容网关地址 |
+| `OPENAI_API_BASE` | `http://127.0.0.1:3000/v1` | OpenAI 兼容网关地址 |
 | `OPENAI_API_KEY` | *(用户配置密钥)* | DSH 统一调用密钥 |
 | `N8N_HOST` | `127.0.0.1` | 服务绑定地址 |
 | `N8N_PORT` | `5678` | 服务监听端口 |
 
 在 Code 节点中直接通过 `$env` 对象安全读取：
 ```javascript
-const baseUrl = $env['OPENAI_API_BASE'] || 'https://web.shieldcell.cn/v1';
+const baseUrl = $env['OPENAI_API_BASE'] || 'http://127.0.0.1:3000/v1';
 const apiKey = $env['OPENAI_API_KEY'];
 ```

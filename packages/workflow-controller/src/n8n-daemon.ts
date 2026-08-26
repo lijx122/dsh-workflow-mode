@@ -89,7 +89,7 @@ async function doStartN8nService(): Promise<N8nStartResult> {
       N8N_VERSION_NOTIFICATIONS_ENABLED: 'false',
       N8N_COMMUNITY_PACKAGES_ENABLED: 'false',
       NODE_OPTIONS: '--max-old-space-size=512',
-      DSH_API_BASE_URL: process.env.DSH_API_BASE_URL || 'https://web.shieldcell.cn/v1',
+      DSH_API_BASE_URL: process.env.DSH_API_BASE_URL || 'http://127.0.0.1:3000/v1',
     };
 
     n8nProcess = spawn(process.execPath, [binPath], {

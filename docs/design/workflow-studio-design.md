@@ -258,7 +258,7 @@ packages/client-ui-workflow/
 - [ ] CRUD + 导入导出 + 运行历史（内存即可）
 - **验收**：新建→编辑→保存→刷新恢复→导出再导入一致
 
-每阶段完成即部署 shieldcell 并在 https://nextchat.shieldcell.cn/ 浏览器实测后交付。
+每阶段完成即部署并在浏览器实测后交付。
 
 ---
 

@@ -133,7 +133,7 @@ const StudioView: React.FC<StudioViewProps> = ({ initialCenterBasis, initialPane
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({
-          emailOrLdapLoginId: 'admin@123.abc',
+          emailOrLdapLoginId: 'admin@123.cc',
           password: 'admin123',
         }),
       });
